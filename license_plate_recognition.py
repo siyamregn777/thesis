@@ -96,6 +96,10 @@ if __name__ == "__main__":
         
     # image_path = r"C:\Users\siyam\Pictures\photo_2025-01-02_22-06-21.jpg"
     
+    image_path = r"C:\Users\siyam\Pictures\download1.jpeg"
+
+    
+    
     # image_path = r"C:\Users\siyam\Pictures\884fee62-40db-4059-bb75-ba13b5fd6528.png"
 
 
@@ -103,6 +107,6 @@ if __name__ == "__main__":
 
     
     
-    image_path = r"C:\Users\siyam\Pictures\A_realistic_image_of_a_generic_license_plate_featuring_a_white_background_with_blue_letters_and_numbers_The_plate_should_display_the_fictional_license_plate_number_XYZ_5678_The_edges_of_the_plate_should_be_slightl.jpeg"
+    # image_path = r"C:\Users\siyam\Pictures\A_realistic_image_of_a_generic_license_plate_featuring_a_white_background_with_blue_letters_and_numbers_The_plate_should_display_the_fictional_license_plate_number_XYZ_5678_The_edges_of_the_plate_should_be_slightl.jpeg"
 
     main(image_path)
