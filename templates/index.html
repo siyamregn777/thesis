@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register License Plate</title>
+    <style>
+        body {
+            background-size: cover;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .alert {
+            display: none;
+            background-color: rgba(255, 255, 255, 0.8);
+            color: #333;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px;
+            width: 300px;
+            text-align: center;
+        }
+        .form-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        form {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            margin: 10px;
+            width: 300px; /* Set a fixed width for forms */
+        }
+        input[type="text"], input[type="submit"] {
+            padding: 10px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+        }
+        input[type="submit"] {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        input[type="submit"]:hover {
+            background-color: #45a049;
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function () {
+            $("form").on("submit", function (event) {
+                event.preventDefault(); // Prevent the form from submitting the default way
+                const form = $(this);
+                const url = form.attr("action");
+                const method = form.attr("method");
+
+                $.ajax({
+                    type: method,
+                    url: url,
+                    data: form.serialize(),
+                    success: function (response) {
+                        showAlert(response.message, "success");
+                    },
+                    error: function (xhr) {
+                        showAlert(xhr.responseJSON.message, "error");
+                    }
+                });
+            });
+        });
+
+        function showAlert(message, type) {
+            const alertBox = $(".alert");
+            alertBox.text(message);
+            alertBox.css("background-color", type === "success" ? "rgba(0, 255, 0, 0.8)" : "rgba(255, 0, 0, 0.8)");
+            alertBox.show();
+            setTimeout(function () {
+                alertBox.hide();
+            }, 3000);
+        }
+    </script>
+</head>
+<body>
+    <div class="alert"></div>
+    <div class="form-container">
+        <form method="post" action="/register_plate">
+            <h1>Register License Plate</h1>
+            <label for="id_number">Unique ID Number:</label>
+            <input type="text" id="id_number" name="id_number" required>
+            <br>
+            <label for="plate">License Plate:</label>
+            <input type="text" id="plate" name="plate" required>
+            <br>
+            <input type="submit" value="Register">
+        </form>
+
+        <form method="post" action="/update_plate">
+            <h1>Update License Plate</h1>
+            <label for="update_id">Unique ID Number:</label>
+            <input type="text" id="update_id" name="update_id" required>
+            <br>
+            <label for="old_plate">Old License Plate:</label>
+            <input type="text" id="old_plate" name="old_plate" required>
+            <br>
+            <label for="new_plate">New License Plate:</label>
+            <input type="text" id="new_plate" name="new_plate" required>
+            <br>
+            <input type="submit" value="Update">
+        </form>
+    </div>
+
+    <div class="form-container">
+        <form method="post" action="/delete_plate">
+            <h1>Delete License Plate</h1>
+            <label for="delete_id">Unique ID Number:</label>
+            <input type="text" id="delete_id" name="delete_id" required>
+            <br>
+            <label for="delete_plate">License Plate:</label>
+            <input type="text" id="delete_plate" name="delete_plate" required>
+            <br>
+            <input type="submit" value="Delete">
+        </form>
+
+        <form method="post" action="/delete_driver">
+            <h1>Delete Driver</h1>
+            <label for="delete_driver_id">Unique ID Number:</label>
+            <input type="text" id="delete_driver_id" name="delete_driver_id" required>
+            <br>
+            <input type="submit" value="Delete Driver">
+        </form>
+    </div>
+</body>
+</html>
