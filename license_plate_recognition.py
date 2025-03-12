@@ -89,7 +89,7 @@ def main(image_path):
     print(f"Final Gate Status: {gate_status}")
 
 if __name__ == "__main__":
-    # Example image path
+    # Example imagPath
     # image_path = r"C:\Users\siyam\Pictures\1faf1862-1b51-497c-8154-ab8a5e2ba955.png"
     
     # image_path = r"C:\Users\siyam\Pictures\IMG_1242    S.JPG"
