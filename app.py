@@ -19,6 +19,26 @@ def init_db():
     
     conn.commit()
     conn.close()
+    
+# Home Page Route
+@app.route('/home')
+def home():
+    return render_template('home.html')
+
+# About Page Route
+@app.route('/about')
+def about():
+    return render_template('about.html')
+
+# Login Page Route
+@app.route('/login')
+def login():
+    return render_template('login.html')
+
+# Dashboard Route
+@app.route('/dashboard')
+def dashboard():
+    return render_template('index.html')    
 
 @app.route('/check_plate', methods=['GET'])
 def check_plate():
