@@ -12,6 +12,7 @@ def init_db():
     c = conn.cursor()
     
     # Create Drivers table
+    
     c.execute('CREATE TABLE IF NOT EXISTS drivers (id_number VARCHAR(255) PRIMARY KEY)')
     
     # Create License Plates table
