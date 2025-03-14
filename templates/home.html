@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Navbar -->
+    <div class="navbar">
+        <ul>
+            <li><a href="{{ url_for('home') }}">Home</a></li>
+            <li><a href="{{ url_for('about') }}">About</a></li>
+            <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('login') }}">Login</a></li>
+        </ul>
+    </div>
+
+    <!-- Home Content -->
+    <div class="content">
+        <h1>Welcome to the University License Plate Management System</h1>
+        <p>This system allows university students, faculty, and staff to register, update, and manage their vehicle license plates seamlessly.</p>
+        
+        
+    </div>
+</body>
+</html>
