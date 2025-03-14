@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    
+</head>
+<body>
+    <!-- Navbar -->
+    <div class="navbar">
+        <ul>
+            <li><a href="{{ url_for('home') }}">Home</a></li>
+            <li><a href="{{ url_for('about') }}">About</a></li>
+            <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('login') }}">Login</a></li>
+        </ul>
+    </div>
+
+    <!-- About Content -->
+    <div class="about-container">
+        <div class="about-image">
+            <img src="{{ url_for('static', filename='images/logo1.jpg') }}" alt="University Parking">
+        </div>
+        <div class="about-text">
+            <h1>About Us</h1>
+            <p>We provide a robust system for managing license plates and driver information. Our goal is to make the process simple and efficient.</p>
+            <p>Our platform ensures accuracy, security, and convenience in handling vehicle registration and related services.</p>
+            <p>This system is designed specifically for university students, faculty, and staff to streamline the registration of their vehicles on campus.</p>
+            <p>With our easy-to-use interface, users can register their vehicles, update their information, and check the status of their registration with just a few clicks.</p>
+            <p>We aim to enhance campus security by ensuring that all vehicles within the university premises are properly registered and verified.</p>
+            <p>Whether you are a student or faculty member, our platform makes it hassle-free to obtain a university-issued license plate, helping maintain a well-organized and safe parking system.</p>
+        </div>
+    </div>
+</body>
+</html>
