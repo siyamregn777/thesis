@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>Signup</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
@@ -14,30 +14,48 @@
         <ul>
             <li><a href="{{ url_for('home') }}">Home</a></li>
             <li><a href="{{ url_for('about') }}">About</a></li>
-            <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
-            <li><a href="{{ url_for('login') }}">Login</a></li>
+            {% if 'logged_in' in session %}
+                <!-- Dashboard and Logout visible after login -->
+                <li class="dropdown">
+                    <a href="#" class="dropbtn">Dashboard</a>
+                    <div class="dropdown-content">
+                        <a href="#" data-target="#register-form">Register License Plate</a>
+                        <a href="#" data-target="#update-form">Update License Plate</a>
+                        <a href="#" data-target="#delete-plate-form">Delete License Plate</a>
+                        <a href="#" data-target="#delete-driver-form">Delete Driver</a>
+                    </div>
+                </li>
+                <li><a href="{{ url_for('logout') }}">Logout</a></li>
+                <!-- Signup visible only for admin -->
+                {% if session.get('is_admin') %}
+                    <li><a href="{{ url_for('signup') }}">Signup</a></li>
+                {% endif %}
+            {% else %}
+                <!-- Login visible only when not logged in -->
+                <li><a href="{{ url_for('login') }}">Login</a></li>
+            {% endif %}
         </ul>
     </div>
 
-    <!-- Login Form -->
+    <!-- Signup Form -->
     <div class="content">
-        <h1>Login</h1>
-        <form id="login-form" method="post" action="/login">
-            <label for="username">Unique ID Number:</label>
-            <input type="text" id="username" name="username" required>
+        <h1>Signup</h1>
+        <form id="signup-form" method="post" action="/signup">
+            <label for="id_number">Unique ID Number:</label>
+            <input type="text" id="id_number" name="id_number" required>
             <br>
             <label for="password">Password:</label>
             <input type="password" id="password" name="password" required>
             <br>
-            <input type="submit" value="Login">
+            <input type="submit" value="Signup">
         </form>
         <div class="alert"></div>
     </div>
 
     <script>
         $(document).ready(function () {
-            // Handle login form submission
-            $('#login-form').on('submit', function (event) {
+            // Handle signup form submission
+            $('#signup-form').on('submit', function (event) {
                 event.preventDefault();
                 const form = $(this);
                 const url = form.attr('action');
@@ -49,7 +67,7 @@
                     data: form.serialize(),
                     success: function (response) {
                         showAlert(response.message, "success");
-                        // Redirect to dashboard or home page after successful login
+                        // Redirect to dashboard after successful signup
                         setTimeout(function () {
                             window.location.href = "{{ url_for('dashboard') }}";
                         }, 2000);

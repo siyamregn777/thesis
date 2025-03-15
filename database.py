@@ -47,6 +47,29 @@ def init_db():
             )
         ''')
         
+        # Create Admins table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS admins (
+                username VARCHAR(255) PRIMARY KEY,
+                password VARCHAR(255) NOT NULL
+            )
+        ''')
+        
+        # Create Users table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id_number VARCHAR(255) PRIMARY KEY,
+                password VARCHAR(255) NOT NULL,
+                FOREIGN KEY (id_number) REFERENCES drivers (id_number) ON DELETE CASCADE
+            )
+        ''')
+        
+        # Insert default admin account
+        c.execute('''
+            INSERT IGNORE INTO admins (username, password)
+            VALUES ('admin', '12341234')
+        ''')
+        
         conn.commit()
         print("Database initialized successfully.")
     except Error as e:
