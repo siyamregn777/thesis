@@ -64,7 +64,8 @@ def init_db():
             )
         ''')
         
-        # Insert default admin account
+        # Insert default admin account means password
+        
         c.execute('''
             INSERT IGNORE INTO admins (username, password)
             VALUES ('admin', '12341234')
