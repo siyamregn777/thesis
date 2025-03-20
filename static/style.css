@@ -200,6 +200,18 @@ input[type="submit"]:hover {
     align-items: center;
     overflow: hidden;
 }
+.loginn{
+    background-image: url('./images/pexels-sebastianpichard-6894420.jpg');
+    height: 100vh;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
 .backImage {
     background-image: url('./images/pexels-diogo-miranda-2044514-26974685.jpg');
     background-size: cover;
@@ -213,6 +225,24 @@ input[type="submit"]:hover {
     align-items: center;
 }
 
+
+.loginn h1 {
+    color: #fff;
+    font-size: 50px;
+    margin-top: 20px;
+    text-align: center;
+}
+
+.loginn p {
+    color: #fff;
+    font-size: 30px;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 20px;
+}
+.loginn label{
+    color:rgb(255, 255, 255);
+}
 .content h1 {
     color: #fff;
     font-size: 50px;
