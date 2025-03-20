@@ -16,14 +16,8 @@
             <li><a href="{{ url_for('about') }}">About</a></li>
             {% if 'logged_in' in session %}
                 <!-- Dashboard and Logout visible after login -->
-                <li class="dropdown">
-                    <a href="#" class="dropbtn">Dashboard</a>
-                    <div class="dropdown-content">
-                        <a href="#" data-target="#register-form">Register License Plate</a>
-                        <a href="#" data-target="#update-form">Update License Plate</a>
-                        <a href="#" data-target="#delete-plate-form">Delete License Plate</a>
-                        <a href="#" data-target="#delete-driver-form">Delete Driver</a>
-                    </div>
+                <li>
+                    <a href="{{ url_for('home') }}">Dashboard</a>
                 </li>
                 <li><a href="{{ url_for('logout') }}">Logout</a></li>
                 <!-- Signup visible only for admin -->
