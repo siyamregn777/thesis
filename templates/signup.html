@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -69,7 +70,7 @@
                         showAlert(response.message, "success");
                         // Redirect to dashboard after successful signup
                         setTimeout(function () {
-                            window.location.href = "{{ url_for('dashboard') }}";
+                            window.location.href = "{{ url_for('home') }}";
                         }, 2000);
                     },
                     error: function (xhr) {
