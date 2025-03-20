@@ -33,64 +33,71 @@
     <div class="alert"></div>
 
     <!-- Dashboard Options -->
-    <div class="dashboard-options">
-        <a href="#" data-target="#register-form">Register License Plate</a>
-        <a href="#" data-target="#update-form">Update License Plate</a>
-        <a href="#" data-target="#delete-plate-form">Delete License Plate</a>
-        <a href="#" data-target="#delete-driver-form">Delete Driver</a>
-    </div>
+     <div class="backImage">
 
-    <!-- Forms -->
-    <div class="form-container" id="register-form">
-        <form method="post" action="/register_plate">
-            <h1>Register License Plate</h1>
-            <label for="id_number">Unique ID Number:</label>
-            <input type="text" id="id_number" name="id_number" required>
-            <br>
-            <label for="plate">License Plate:</label>
-            <input type="text" id="plate" name="plate" required>
-            <br>
-            <input type="submit" value="Register">
-        </form>
-    </div>
+        <div class="dashboard-options">
+            <a href="#" data-target="#register-form">Register License Plate</a>
+            <a href="#" data-target="#update-form">Update License Plate</a>
+            <a href="#" data-target="#delete-plate-form">Delete License Plate</a>
+            <a href="#" data-target="#delete-driver-form">Delete Driver</a>
+        </div>
+    
+        <!-- Forms -->
+        <div class="form-container" id="register-form">
+            <form method="post" action="/register_plate">
+                <h1>Register License Plate</h1>
+                <label for="id_number">Unique ID Number:</label>
+                <input type="text" id="id_number" name="id_number" required>
+                <br>
+                <label for="plate">License Plate:</label>
+                <input type="text" id="plate" name="plate" required>
+                <br>
+                <input type="submit" value="Register">
+            </form>
+        </div>
+    
+        <div class="form-container" id="update-form">
+            <form method="post" action="/update_plate">
+                <h1>Update License Plate</h1>
+                <label for="update_id">Unique ID Number:</label>
+                <input type="text" id="update_id" name="update_id" required>
+                <br>
+                <label for="old_plate">Old License Plate:</label>
+                <input type="text" id="old_plate" name="old_plate" required>
+                <br>
+                <label for="new_plate">New License Plate:</label>
+                <input type="text" id="new_plate" name="new_plate" required>
+                <br>
+                <input type="submit" value="Update">
+            </form>
+        </div>
+    
+        <div class="form-container" id="delete-plate-form">
+            <form method="post" action="/delete_plate">
+                <h1>Delete License Plate</h1>
+                <label for="delete_id">Unique ID Number:</label>
+                <input type="text" id="delete_id" name="delete_id" required>
+                <br>
+                <label for="delete_plate">License Plate:</label>
+                <input type="text" id="delete_plate" name="delete_plate" required>
+                <br>
+                <input type="submit" value="Delete">
+            </form>
+        </div>
+    
+        <div class="form-container" id="delete-driver-form">
+            <form method="post" action="/delete_driver">
+                <h1>Delete Driver</h1>
+                <label for="delete_driver_id">Unique ID Number:</label>
+                <input type="text" id="delete_driver_id" name="delete_driver_id" required>
+                <br>
+                <input type="submit" value="Delete Driver">
+            </form>
+        </div>
 
-    <div class="form-container" id="update-form">
-        <form method="post" action="/update_plate">
-            <h1>Update License Plate</h1>
-            <label for="update_id">Unique ID Number:</label>
-            <input type="text" id="update_id" name="update_id" required>
-            <br>
-            <label for="old_plate">Old License Plate:</label>
-            <input type="text" id="old_plate" name="old_plate" required>
-            <br>
-            <label for="new_plate">New License Plate:</label>
-            <input type="text" id="new_plate" name="new_plate" required>
-            <br>
-            <input type="submit" value="Update">
-        </form>
-    </div>
 
-    <div class="form-container" id="delete-plate-form">
-        <form method="post" action="/delete_plate">
-            <h1>Delete License Plate</h1>
-            <label for="delete_id">Unique ID Number:</label>
-            <input type="text" id="delete_id" name="delete_id" required>
-            <br>
-            <label for="delete_plate">License Plate:</label>
-            <input type="text" id="delete_plate" name="delete_plate" required>
-            <br>
-            <input type="submit" value="Delete">
-        </form>
-    </div>
+     </div>
 
-    <div class="form-container" id="delete-driver-form">
-        <form method="post" action="/delete_driver">
-            <h1>Delete Driver</h1>
-            <label for="delete_driver_id">Unique ID Number:</label>
-            <input type="text" id="delete_driver_id" name="delete_driver_id" required>
-            <br>
-            <input type="submit" value="Delete Driver">
-        </form>
-    </div>
 </body>
+{% include 'footer.html' %}
 </html>
