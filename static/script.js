@@ -1,4 +1,5 @@
-$(document).ready(function () {
+// Function to bind event handlers
+function bindEventHandlers() {
     // Handle form submissions
     $("form").on("submit", function (event) {
         event.preventDefault(); // Prevent the default form submission
@@ -28,12 +29,15 @@ $(document).ready(function () {
     // Show forms based on dropdown selection
     $(".dropdown-content a").on("click", function (e) {
         e.preventDefault();
+        console.log("Dropdown link clicked"); // Debugging statement
         const target = $(this).data("target");
+        console.log("Target form:", target); // Debugging statement
         $(".form-container").hide(); // Hide all forms
         $(target).show(); // Show the selected form
     });
-});
+}
 
+// Function to show alerts
 function showAlert(message, type) {
     const alertBox = $(".alert");
     alertBox.text(message);
@@ -44,41 +48,12 @@ function showAlert(message, type) {
     }, 3000);
 }
 
-
+// Bind event handlers when the document is ready
 $(document).ready(function () {
-    // Function to show alert
-    function showAlert(message, type) {
-        const alertBox = $('.alert');
-        alertBox.text(message).addClass(type).fadeIn();
+    bindEventHandlers();
+});
 
-        // Hide the alert after 5 seconds
-        setTimeout(function () {
-            alertBox.fadeOut();
-        }, 5000);
-    }
-
-    // Handle form submissions
-    $('form').on('submit', function (e) {
-        e.preventDefault(); // Prevent default form submission
-
-        const form = $(this);
-        const action = form.attr('action');
-        const method = form.attr('method');
-        const data = form.serialize();
-
-        // Send AJAX request
-        $.ajax({
-            url: action,
-            type: method,
-            data: data,
-            success: function (response) {
-                // Show success alert
-                showAlert(response.message, 'success');
-            },
-            error: function (xhr) {
-                // Show error alert
-                showAlert(xhr.responseJSON.message, 'error');
-            }
-        });
-    });
+// Re-bind event handlers when the page is loaded via AJAX or navigation
+$(window).on("load", function () {
+    bindEventHandlers();
 });
