@@ -1,5 +1,3 @@
-#app.py
-
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from ultralytics import YOLO
 from database import get_db_connection
@@ -85,11 +83,9 @@ def about():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        # Get form data
         username = request.form.get('username')
         password = request.form.get('password')
 
-        # Validate inputs
         if not username or not password:
             return jsonify({"message": "Username and password are required!"}), 400
 
@@ -105,24 +101,21 @@ def login():
             admin = c.fetchone()
 
             if admin:
-                # Set session variables for admin
                 session['logged_in'] = True
-                session['user_id'] = username
+                session['user_id'] = username  # Store the admin's username
                 session['is_admin'] = True
-                return jsonify({"message": "Admin login successful!", "redirect": url_for('home')}), 200
+                return jsonify({"message": "Admin login successful!", "redirect": url_for('dashboard')}), 200
 
             # Check if the user is a regular user
             c.execute('SELECT * FROM users WHERE id_number = %s AND password = %s', (username, password))
             user = c.fetchone()
 
             if user:
-                # Set session variables for regular user
                 session['logged_in'] = True
-                session['user_id'] = username
+                session['user_id'] = username  # Store the user's Unique ID Number
                 session['is_admin'] = False
-                return jsonify({"message": "User login successful!", "redirect": url_for('home')}), 200
+                return jsonify({"message": "User login successful!", "redirect": url_for('dashboard')}), 200
 
-            # If no user is found
             return jsonify({"message": "Invalid username or password!"}), 401
         except mysql.connector.Error as e:
             return jsonify({"message": f"Database error: {e}"}), 500
@@ -130,8 +123,8 @@ def login():
             if conn:
                 conn.close()
     else:
-        # Render the login page for GET requests
         return render_template('login.html')
+
 # Signup Page Route (Admin Only)
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -178,6 +171,7 @@ def signup():
     else:
         # Render the signup page for GET requests
         return render_template('signup.html')
+
 # Logout Route
 @app.route('/logout')
 def logout():
@@ -207,9 +201,16 @@ def check_plate():
 # Register Plate Route
 @app.route('/register_plate', methods=['POST'])
 def register_plate():
-    id_number = request.form['id_number']
-    plate = request.form['plate']
-    
+    if 'logged_in' not in session:
+        return jsonify({"message": "Please log in to perform this action."}), 401
+
+    id_number = request.form.get('id_number')
+    plate = request.form.get('plate')
+
+    # Validate if the user is trying to use their own ID
+    if not session.get('is_admin') and id_number != session.get('user_id'):
+        return jsonify({"message": "You can only register plates for your own ID."}), 403
+
     conn = get_db_connection()
     c = conn.cursor()
 
@@ -240,9 +241,16 @@ def register_plate():
 # Update Plate Route
 @app.route('/update_plate', methods=['POST'])
 def update_plate():
-    id_number = request.form['update_id']
-    old_plate = request.form['old_plate']
-    new_plate = request.form['new_plate']
+    if 'logged_in' not in session:
+        return jsonify({"message": "Please log in to perform this action."}), 401
+
+    id_number = request.form.get('update_id')
+    old_plate = request.form.get('old_plate')
+    new_plate = request.form.get('new_plate')
+
+    # Validate if the user is trying to use their own ID
+    if not session.get('is_admin') and id_number != session.get('user_id'):
+        return jsonify({"message": "You can only update plates for your own ID."}), 403
 
     conn = get_db_connection()
     c = conn.cursor()
@@ -268,8 +276,15 @@ def update_plate():
 # Delete Plate Route
 @app.route('/delete_plate', methods=['POST'])
 def delete_plate():
-    id_number = request.form['delete_id']
-    plate = request.form['delete_plate']
+    if 'logged_in' not in session:
+        return jsonify({"message": "Please log in to perform this action."}), 401
+
+    id_number = request.form.get('delete_id')
+    plate = request.form.get('delete_plate')
+
+    # Validate if the user is trying to use their own ID
+    if not session.get('is_admin') and id_number != session.get('user_id'):
+        return jsonify({"message": "You can only delete plates for your own ID."}), 403
 
     conn = get_db_connection()
     c = conn.cursor()
@@ -295,7 +310,14 @@ def delete_plate():
 # Delete Driver Route
 @app.route('/delete_driver', methods=['POST'])
 def delete_driver():
-    id_number = request.form['delete_driver_id']
+    if 'logged_in' not in session:
+        return jsonify({"message": "Please log in to perform this action."}), 401
+
+    id_number = request.form.get('delete_driver_id')
+
+    # Validate if the user is an admin
+    if not session.get('is_admin'):
+        return jsonify({"message": "Only admins can delete drivers."}), 403
 
     conn = get_db_connection()
     c = conn.cursor()

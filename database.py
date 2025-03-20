@@ -38,7 +38,7 @@ def init_db():
             )
         ''')
         
-        # Create License Plates table
+        # Create License Plates table (ensure plates are unique)
         c.execute('''
             CREATE TABLE IF NOT EXISTS plates (
                 plate VARCHAR(255) PRIMARY KEY,
@@ -64,8 +64,7 @@ def init_db():
             )
         ''')
         
-        # Insert default admin account means password
-        
+        # Insert default admin account
         c.execute('''
             INSERT IGNORE INTO admins (username, password)
             VALUES ('admin', '12341234')

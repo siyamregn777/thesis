@@ -6,6 +6,18 @@ $(document).ready(function () {
         const url = form.attr("action");
         const method = form.attr("method");
 
+        // Get the logged-in user's Unique ID from the session
+        const loggedInUserId = "{{ session.get('user_id') }}";
+
+        // Get the Unique ID entered in the form
+        const formUserId = form.find("input[name='id_number'], input[name='update_id'], input[name='delete_id'], input[name='delete_driver_id']").val();
+
+        // Validate the Unique ID (only for non-admin users)
+        if (!"{{ session.get('is_admin') }}" && formUserId !== loggedInUserId) {
+            showAlert("You can only use your own Unique ID Number.", "error");
+            return; // Stop the form submission
+        }
+
         // Send the form data using AJAX
         $.ajax({
             type: method,
