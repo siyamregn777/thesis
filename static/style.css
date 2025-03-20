@@ -184,7 +184,9 @@ input[type="submit"]:hover {
     align-items: center;
     overflow: hidden;
 }
-
+.backImage{
+    background-image: url('./images/logo.png');
+}
 .content h1 {
     color: #fff;
     font-size: 50px;
