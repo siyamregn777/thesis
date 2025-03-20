@@ -21,11 +21,12 @@
                     <a href="{{ url_for('home') }}">Dashboard</a>
                     
                 </li>
-                <li><a href="{{ url_for('logout') }}">Logout</a></li>
                 <!-- Signup visible only for admin -->
                 {% if session.get('is_admin') %}
-                    <li><a href="{{ url_for('signup') }}">Signup</a></li>
+                    <li><a href="{{ url_for('signup') }}">Signup User</a></li>
                 {% endif %}
+                <li><a href="{{ url_for('logout') }}">Logout</a></li>
+
             {% else %}
                 <!-- Login visible only when not logged in -->
                 <li><a href="{{ url_for('login') }}">Login</a></li>

@@ -189,7 +189,7 @@ input[type="submit"]:hover {
 
 /* Home Page Styles */
 .content {
-    background-image: url('./images/logo.png');
+    background-image: url('./images/pexels-quentin-martinez-2147503099-31192011.jpg');
     height: 100vh;
     background-position: center;
     background-repeat: no-repeat;
@@ -201,7 +201,7 @@ input[type="submit"]:hover {
     overflow: hidden;
 }
 .backImage {
-    background-image: url('./images/logo.png');
+    background-image: url('./images/pexels-diogo-miranda-2044514-26974685.jpg');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;

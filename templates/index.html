@@ -17,11 +17,12 @@
             {% if 'logged_in' in session %}
                 <!-- Dashboard and Logout visible after login -->
                 <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
-                <li><a href="{{ url_for('logout') }}">Logout</a></li>
+                
                 <!-- Signup visible only for admin -->
                 {% if session.get('is_admin') %}
-                    <li><a href="{{ url_for('signup') }}">Signup</a></li>
+                    <li><a href="{{ url_for('signup') }}">Signup User</a></li>
                 {% endif %}
+                <li><a href="{{ url_for('logout') }}">Logout</a></li>
             {% else %}
                 <!-- Login visible only when not logged in -->
                 <li><a href="{{ url_for('login') }}">Login</a></li>
@@ -38,7 +39,10 @@
             <a href="#" data-target="#register-form">Register License Plate</a>
             <a href="#" data-target="#update-form">Update License Plate</a>
             <a href="#" data-target="#delete-plate-form">Delete License Plate</a>
-            <a href="#" data-target="#delete-driver-form">Delete Driver</a>
+            <!-- Delete Driver option visible only for admin -->
+            {% if session.get('is_admin') %}
+                <a href="#" data-target="#delete-driver-form">Delete Driver</a>
+            {% endif %}
         </div>
     
         <!-- Forms -->
@@ -84,15 +88,18 @@
             </form>
         </div>
     
-        <div class="form-container" id="delete-driver-form">
-            <form method="post" action="/delete_driver">
-                <h1>Delete Driver</h1>
-                <label for="delete_driver_id">Unique ID Number:</label>
-                <input type="text" id="delete_driver_id" name="delete_driver_id" required>
-                <br>
-                <input type="submit" value="Delete Driver">
-            </form>
-        </div>
+        <!-- Delete Driver form visible only for admin -->
+        {% if session.get('is_admin') %}
+            <div class="form-container" id="delete-driver-form">
+                <form method="post" action="/delete_driver">
+                    <h1>Delete Driver</h1>
+                    <label for="delete_driver_id">Unique ID Number:</label>
+                    <input type="text" id="delete_driver_id" name="delete_driver_id" required>
+                    <br>
+                    <input type="submit" value="Delete Driver">
+                </form>
+            </div>
+        {% endif %}
     </div>
 
     <!-- Footer -->
