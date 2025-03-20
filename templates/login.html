@@ -16,8 +16,8 @@
             <li><a href="{{ url_for('about') }}">About</a></li>
             {% if 'logged_in' in session %}
                 <!-- Dashboard and Logout visible after login -->
-                <li class="dropdown">
-                    <a href="{{ url_for('home') }}">Dashboard</a>
+                <li >
+                    <a href="{{ url_for('dashboard') }}">Dashboard</a>
                     
                 </li>
                 <li><a href="{{ url_for('logout') }}">Logout</a></li>
