@@ -27,6 +27,7 @@ $(document).ready(function () {
                 showAlert(response.message, "success");
             },
             error: function (xhr) {
+                
                 // Handle errors
                 if (xhr.responseJSON && xhr.responseJSON.message) {
                     showAlert(xhr.responseJSON.message, "error");
