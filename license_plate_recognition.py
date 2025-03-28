@@ -1,3 +1,4 @@
+#license_plate_recognition.py
 import cv2
 import easyocr
 import requests
@@ -96,11 +97,11 @@ if __name__ == "__main__":
         
     # image_path = r"C:\Users\siyam\Pictures\photo_2025-01-02_22-06-21.jpg"
     
-    image_path = r"C:\Users\siyam\Pictures\download1.jpeg"
+    # image_path = r"C:\Users\siyam\Pictures\download1.jpeg"
 
     
     
-    # image_path = r"C:\Users\siyam\Pictures\884fee62-40db-4059-bb75-ba13b5fd6528.png"
+    image_path = r"C:\Users\siyam\Pictures\884fee62-40db-4059-bb75-ba13b5fd6528.png"
 
 
 
