@@ -16,7 +16,7 @@ cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# Collection references
+# Collection references that declatre on firebase
 drivers_ref = db.collection('drivers')
 plates_ref = db.collection('plates')
 admins_ref = db.collection('admins')
@@ -25,7 +25,6 @@ users_ref = db.collection('users')
 def init_firebase():
     """Initialize Firebase collections with default data"""
     try:
-        # Add default admin if not exists
         admins_ref.document('admin').set({
             'username': 'admin',
             'password': '12341234'
@@ -88,11 +87,11 @@ def signup():
             return jsonify({"message": "ID Number and password are required!"}), 400
 
         try:
-            # Check if user exists
+
             if users_ref.document(id_number).get().exists:
                 return jsonify({"message": "User already exists!"}), 400
 
-            # Add driver and user
+            # Add Teacher (driver)
             drivers_ref.document(id_number).set({'id_number': id_number})
             users_ref.document(id_number).set({
                 'id_number': id_number,
@@ -165,7 +164,7 @@ def update_plate():
         return jsonify({"message": "You can only update plates for your own ID."}), 403
 
     try:
-        # Check if plate belongs to user
+        # Check if plate belongs to  Teacher (driver)
         plate_doc = plates_ref.document(old_plate).get()
         if not plate_doc.exists or plate_doc.to_dict().get('id_number') != id_number:
             return jsonify({"message": "No license plate found for the given ID!"}), 404
@@ -192,7 +191,7 @@ def delete_plate():
         return jsonify({"message": "You can only delete plates for your own ID."}), 403
 
     try:
-        # Verify plate belongs to user
+        # Verify plate belongs to  Teacher (driver)
         plate_doc = plates_ref.document(plate).get()
         if not plate_doc.exists or plate_doc.to_dict().get('id_number') != id_number:
             return jsonify({"message": "No license plate found for the given ID!"}), 404
@@ -213,15 +212,15 @@ def delete_driver():
     id_number = request.form.get('delete_driver_id')
 
     try:
-        # Delete driver and associated plates
+        # Delete  Teacher (driver) and associated plates
         batch = db.batch()
         
-        # Delete all plates for this driver
+        # Delete all plates for this Teacher (driver)
         plates = plates_ref.where('id_number', '==', id_number).stream()
         for plate in plates:
             batch.delete(plate.reference)
         
-        # Delete user and driver
+        # Delete  Teacher (driver)
         batch.delete(users_ref.document(id_number))
         batch.delete(drivers_ref.document(id_number))
         

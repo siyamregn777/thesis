@@ -1,3 +1,5 @@
+#firebase_service.py
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 from firebase_admin.exceptions import FirebaseError
@@ -14,9 +16,9 @@ admins_ref = db.collection('admins')
 users_ref = db.collection('users')
 
 def init_firebase():
-    """Initialize Firebase collections with default data"""
+    """Initialize Firebase collections"""
     try:
-        # Add default admin if not exists
+        # Add admin if not exists
         admins_ref.document('admin').set({
             'username': 'admin',
             'password': '12341234'

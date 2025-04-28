@@ -54,10 +54,11 @@ def detect_objects_and_license_plate(image_path):
     for result in results:
         for box in result.boxes:
             class_id = int(box.cls)
-            if class_id == 2 or class_id == 7:  # Car (2) or Truck (7)
-                gate_open = True
-            elif class_id in [0, 1]:  # Person (0) or Animal (1)
-                gate_open = False
+            # Update this section to include all desired vehicle classes
+        if class_id in [1,2, 3, 4, 5, 6 , 7,8]:  # Car(2), Motorcycle(3), Bus(5), Truck(7), Train(9)
+            gate_open = True
+        elif class_id in [0, 1,9,10,11,12,13,14,15,16,17,18,19,20]:  # Person(0) or Animal(1)
+            gate_open = False
 
     # Extract license plate text
     detected_texts = extract_license_plate(image_path)
@@ -98,10 +99,19 @@ if __name__ == "__main__":
     # image_path = r"C:\Users\siyam\Pictures\photo_2025-01-02_22-06-21.jpg"
     
     # image_path = r"C:\Users\siyam\Pictures\download1.jpeg"
+    
+    # image_path = r"C:\Users\siyam\Pictures\images.jpg"
+    
+    image_path = r"C:\Users\siyam\Pictures\images (2).png"
+
 
     
     
-    image_path = r"C:\Users\siyam\Pictures\884fee62-40db-4059-bb75-ba13b5fd6528.png"
+    
+
+    
+    
+    # image_path = r"C:\Users\siyam\Pictures\884fee62-40db-4059-bb75-ba13b5fd6528.png"
 
 
 

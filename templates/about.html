@@ -11,26 +11,26 @@
     
 </head>
 <body>
-    <!-- Navbar -->
+
     <div class="navbar">
         <ul>
             <li><a href="{{ url_for('home') }}">Home</a></li>
             <li><a href="{{ url_for('about') }}">About</a></li>
             {% if 'logged_in' in session %}
-                <!-- Dashboard and Logout visible after login -->
+                <!--visible after login may be (both) the user or admin -->
                 <li >
                     <a href="{{ url_for('dashboard') }}">Dashboard</a>
                     
                 </li>
-                <!-- Signup visible only for admin -->
+
                 {% if session.get('is_admin') %}
                     <li><a href="{{ url_for('signup') }}">Signup User</a></li>
                 {% endif %}
                 <li><a href="{{ url_for('logout') }}">Logout</a></li>
 
             {% else %}
-                <!-- Login visible only when not logged in -->
-                <li><a href="{{ url_for('login') }}">Login</a></li>
+
+            <li><a href="{{ url_for('login') }}">Login</a></li>
             {% endif %}
         </ul>
     </div>
