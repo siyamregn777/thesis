@@ -1,0 +1,12 @@
+[wokwi]
+version = 1
+firmware = ".pio/build/esp32dev/firmware.elf"  # PlatformIO
+elf = ".pio/build/esp32dev/firmware.elf"       # For debugging
+
+# Port forwarding (optional)
+[[net.forward]]
+from = "localhost:5000"
+to = "target:80"
+
+# Serial debug (optional)
+rfc2217ServerPort = 4000
