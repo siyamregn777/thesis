@@ -92,7 +92,7 @@ def main(image_path):
 
 if __name__ == "__main__":
     # Example imagPath
-    # image_path = r"C:\Users\siyam\Pictures\1faf1862-1b51-497c-8154-ab8a5e2ba955.png"
+    image_path = r"C:\Users\siyam\Pictures\1faf1862-1b51-497c-8154-ab8a5e2ba955.png"
     
     # image_path = r"C:\Users\siyam\Pictures\IMG_1242    S.JPG"
         
@@ -102,7 +102,7 @@ if __name__ == "__main__":
     
     # image_path = r"C:\Users\siyam\Pictures\images.jpg"
     
-    image_path = r"C:\Users\siyam\Pictures\images (2).png"
+    # image_path = r"C:\Users\siyam\Pictures\images (2).png"
 
 
     
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     
     # image_path = r"C:\Users\siyam\Pictures\884fee62-40db-4059-bb75-ba13b5fd6528.png"
 
-
+    image_path=r"C:\Users\siyam\Pictures\images.jpeg"
 
 
     
