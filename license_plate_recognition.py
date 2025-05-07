@@ -1,16 +1,47 @@
-#license_plate_recognition.py
 import cv2
 import easyocr
 import requests
+import numpy as np
+from pathlib import Path
+import pandas as pd
+import torch
+import torch.serialization
 from ultralytics import YOLO
+from ultralytics.nn.modules.conv import Conv
+from ultralytics.nn.tasks import DetectionModel
 
-# Initialize EasyOCR reader globally
-reader = easyocr.Reader(['en'])
+# ========== INITIALIZATION ==========
+# Add YOLOv8 modules to safe globals
+torch.serialization.add_safe_globals([Conv, DetectionModel])
+
+# Initialize models
+plate_model_path = r"C:\Users\siyam\Documents\ThesisMain\Licence-Plate-Detection-using-YOLO-V8\runs\detect\train\weights\best.pt"
+plate_model = YOLO(plate_model_path)  # Custom license plate detection
+object_model = YOLO("yolov8n.pt")    # General object detection
+reader = easyocr.Reader(['en'])      # Initialize OCR for English characters
+
+# ========== CORE FUNCTIONS ==========
+def preprocess_plate(plate_img):
+    """Enhanced preprocessing for better OCR results"""
+    gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+    enhanced = clahe.apply(gray)
+    thresh = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                 cv2.THRESH_BINARY_INV, 11, 2)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+    cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+    return cleaned
+
+def extract_plate_text(plate_img):
+    """High-accuracy text extraction with OCR"""
+    processed = preprocess_plate(plate_img)
+    results = reader.readtext(processed, detail=0, 
+                            allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                            width_ths=3, height_ths=1)
+    return results[0] if results else ""
 
 def check_plate_in_database(plate):
-    """
-    Check if the license plate exists in the database by sending a request to the API.
-    """
+    """Check if license plate exists in database via API"""
     try:
         response = requests.get(f"http://localhost:5000/check_plate?plate={plate}")
         response.raise_for_status()
@@ -19,105 +50,186 @@ def check_plate_in_database(plate):
         print(f"Error checking plate in database: {e}")
         return {"registered": False}
 
-def extract_license_plate(image_path):
-    """
-    Extract potential license plate text from an image using EasyOCR.
-    """
-    # Read the image
-    frame = cv2.imread(image_path)
-    if frame is None:
+# ========== PROCESSING FUNCTIONS ==========
+def process_image(image_path, output_dir='output'):
+    """Process an image with detection and text extraction"""
+    Path(output_dir).mkdir(exist_ok=True)
+    image = cv2.imread(image_path)
+    if image is None:
         print("Error: Could not read image.")
-        return None
-
-    # Perform OCR to get the text
-    ocr_results = reader.readtext(frame)
+        return False
     
-    detected_texts = []
-    for (bbox, text, prob) in ocr_results:
-        if len(text) >= 3:  # Filter based on your needs
-            detected_texts.append(text.strip())
-    
-    return detected_texts
-
-def detect_objects_and_license_plate(image_path):
-    """
-    Use YOLOv8 to detect objects (cars, people, animals) and extract license plates.
-    """
-    # Load YOLOv8 model
-    model = YOLO("yolov8n.pt")
-
-    # Perform object detection
-    results = model.predict(source=image_path)
-
-    # Check for cars, people, and animals
+    plates_data = []
     gate_open = False
-    for result in results:
+    
+    # Detect objects with general model
+    object_results = object_model.predict(source=image)
+    for result in object_results:
         for box in result.boxes:
             class_id = int(box.cls)
-            # Update this section to include all desired vehicle classes
-        if class_id in [1,2, 3, 4, 5, 6 , 7,8]:  # Car(2), Motorcycle(3), Bus(5), Truck(7), Train(9)
-            gate_open = True
-        elif class_id in [0, 1,9,10,11,12,13,14,15,16,17,18,19,20]:  # Person(0) or Animal(1)
-            gate_open = False
-
-    # Extract license plate text
-    detected_texts = extract_license_plate(image_path)
-
-    if detected_texts:
-        for text in detected_texts:
-            print(f"Detected License Plate: {text}")
-
-            # Check database
-            result = check_plate_in_database(text)
-            if result.get("registered"):
-                print("Access Granted")
-                # If the license plate is registered and a car/truck is detected, open the gate
-                if gate_open:
-                    print("Gate Open: True")
+            if class_id in [2, 3, 5, 7]:  # Cars, motorcycles, buses, trucks
+                gate_open = True
+    
+    # Detect license plates with custom model
+    plate_results = plate_model.predict(source=image, conf=0.5)
+    
+    for i, result in enumerate(plate_results):
+        # Save detection visualization
+        detections = result.plot()
+        output_path = f'{output_dir}/detection_{Path(image_path).stem}.jpg'
+        cv2.imwrite(output_path, detections)
+        
+        # Process each detected plate
+        for j, box in enumerate(result.boxes.xyxy.cpu().numpy()):
+            x1, y1, x2, y2 = map(int, box)
+            plate_img = image[y1:y2, x1:x2]
+            
+            # Save cropped plate
+            plate_path = f'{output_dir}/plate_{Path(image_path).stem}_{j}.jpg'
+            cv2.imwrite(plate_path, plate_img)
+            
+            # Extract text
+            plate_text = extract_plate_text(plate_img)
+            print(f"Plate {j+1}: {plate_text}")
+            
+            if plate_text:
+                # Check database
+                result = check_plate_in_database(plate_text)
+                if result.get("registered"):
+                    print("Access Granted")
+                    gate_open = True
                 else:
-                    print("Gate Open: False")
-            else:
-                print("Access Denied")
-                gate_open = False  # Ensure the gate remains closed if the license plate is not registered
-    else:
-        print("No license plate detected.")
-        gate_open = False  # Ensure the gate remains closed if no license plate is detected
-
+                    print("Access Denied")
+                    gate_open = False
+            
+            # Annotate image with extracted text
+            cv2.putText(detections, plate_text, (x1, y1-10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
+            cv2.imwrite(f'{output_dir}/annotated_{Path(image_path).stem}.jpg', detections)
+            
+            # Store plate data
+            plates_data.append({
+                'image': Path(image_path).name,
+                'plate_img': plate_path,
+                'plate_text': plate_text,
+                'coordinates': f"{x1},{y1},{x2},{y2}",
+                'access_granted': gate_open
+            })
+    
+    # Save plate data to CSV
+    if plates_data:
+        pd.DataFrame(plates_data).to_csv(f'{output_dir}/plate_data.csv', index=False)
+    
+    print(f"Image processing complete. Results saved in '{output_dir}'")
+    print(f"Final Gate Status: {gate_open}")
     return gate_open
 
-def main(image_path):
-    # Detect objects and license plates
-    gate_status = detect_objects_and_license_plate(image_path)
-    print(f"Final Gate Status: {gate_status}")
-
-if __name__ == "__main__":
-    # Example imagPath
-    image_path = r"C:\Users\siyam\Pictures\1faf1862-1b51-497c-8154-ab8a5e2ba955.png"
+def process_video(video_path, output_dir='video_output', frame_skip=3):
+    """Process video file with plate detection and OCR"""
+    Path(output_dir).mkdir(exist_ok=True)
+    cap = cv2.VideoCapture(video_path)
     
-    # image_path = r"C:\Users\siyam\Pictures\IMG_1242    S.JPG"
+    # Get video properties
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # Prepare video writer
+    output_path = f'{output_dir}/annotated_{Path(video_path).stem}.mp4'
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    
+    frame_count = 0
+    plates_data = []
+    
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+            
+        frame_count += 1
+        if frame_count % frame_skip != 0:
+            continue
+            
+        gate_open = False
         
-    # image_path = r"C:\Users\siyam\Pictures\photo_2025-01-02_22-06-21.jpg"
+        # Detect objects with general model
+        object_results = object_model.predict(source=frame)
+        for result in object_results:
+            for box in result.boxes:
+                class_id = int(box.cls)
+                if class_id in [2, 3, 5, 7]:  # Cars, motorcycles, buses, trucks
+                    gate_open = True
+        
+        # Detect license plates with custom model
+        plate_results = plate_model.predict(source=frame, conf=0.5)
+        
+        for result in plate_results:
+            annotated_frame = result.plot()
+            
+            # Process each detected plate
+            for j, box in enumerate(result.boxes.xyxy.cpu().numpy()):
+                x1, y1, x2, y2 = map(int, box)
+                plate_img = frame[y1:y2, x1:x2]
+                
+                # Extract text
+                plate_text = extract_plate_text(plate_img)
+                if plate_text:
+                    # Save cropped plate
+                    plate_filename = f'frame_{frame_count}_plate_{j}.jpg'
+                    cv2.imwrite(f'{output_dir}/{plate_filename}', plate_img)
+                    
+                    # Check database
+                    result = check_plate_in_database(plate_text)
+                    if result.get("registered"):
+                        gate_open = True
+                    
+                    # Annotate frame with plate text and access status
+                    status = "ACCESS GRANTED" if gate_open else "ACCESS DENIED"
+                    color = (0, 255, 0) if gate_open else (0, 0, 255)
+                    cv2.putText(annotated_frame, f"{plate_text} - {status}", (x1, y1-10),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+                    
+                    # Store plate data
+                    plates_data.append({
+                        'frame': frame_count,
+                        'timestamp': f"{frame_count/fps:.2f}s",
+                        'plate_img': plate_filename,
+                        'plate_text': plate_text,
+                        'coordinates': f"{x1},{y1},{x2},{y2}",
+                        'access_granted': gate_open
+                    })
+            
+            # Write frame to output video
+            out.write(annotated_frame)
+            
+        # Display progress
+        cv2.imshow('Processing...', annotated_frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
     
-    # image_path = r"C:\Users\siyam\Pictures\download1.jpeg"
+    # Release resources
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
     
-    # image_path = r"C:\Users\siyam\Pictures\images.jpg"
+    # Save plate data to CSV
+    if plates_data:
+        pd.DataFrame(plates_data).to_csv(f'{output_dir}/plate_data.csv', index=False)
     
-    # image_path = r"C:\Users\siyam\Pictures\images (2).png"
+    print(f"Video processing complete. Results saved in '{output_dir}'")
 
-
+# ========== MAIN EXECUTION ==========
+if __name__ == '__main__':
+    # ===== EDIT THESE PATHS =====
+    IMAGE_PATH = r"C:\Users\siyam\Pictures\images (2).jpeg"  # ← Your image path here
+    # VIDEO_PATH = r"C:\Users\siyam\Pictures\mc pgoto\video_2025-05-05_03-11-42.mp4"  # ← Your video path here
     
+    # ===== CHOOSE WHAT TO PROCESS =====
+    # Uncomment ONE of these lines:
     
+    # For images:
+    process_image(IMAGE_PATH)
     
-
-    
-    
-    # image_path = r"C:\Users\siyam\Pictures\884fee62-40db-4059-bb75-ba13b5fd6528.png"
-
-    image_path=r"C:\Users\siyam\Pictures\images.jpeg"
-
-
-    
-    
-    # image_path = r"C:\Users\siyam\Pictures\A_realistic_image_of_a_generic_license_plate_featuring_a_white_background_with_blue_letters_and_numbers_The_plate_should_display_the_fictional_license_plate_number_XYZ_5678_The_edges_of_the_plate_should_be_slightl.jpeg"
-
-    main(image_path)
+    # For videos (with frame skipping):
+    # process_video(VIDEO_PATH, frame_skip=3)
