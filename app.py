@@ -4,19 +4,25 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from firebase_admin.exceptions import FirebaseError
 import os
+import cv2
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # Secure secret key
 
-# Load YOLOv8 model
-model = YOLO("yolov8n.pt")
+# ========== MODELS INITIALIZATION ==========
+# Load custom license plate detection model
+plate_model_path = r"C:\Users\siyam\Documents\thesis-1\runs\detect\train2\weights\best.pt"
+plate_model = YOLO(plate_model_path)
 
-# Initialize Firebase
+# Load general object detection model (YOLOv8n)
+object_model = YOLO("yolov8n.pt")
+
+# ========== FIREBASE INITIALIZATION ==========
 cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# Collection references that declatre on firebase
+# Collection references
 drivers_ref = db.collection('drivers')
 plates_ref = db.collection('plates')
 admins_ref = db.collection('admins')
@@ -33,6 +39,7 @@ def init_firebase():
     except FirebaseError as e:
         print(f"Firebase initialization error: {e}")
 
+# ========== ROUTES ==========
 @app.route('/home')
 def home():
     return render_template('home.html')
@@ -87,7 +94,6 @@ def signup():
             return jsonify({"message": "ID Number and password are required!"}), 400
 
         try:
-
             if users_ref.document(id_number).get().exists:
                 return jsonify({"message": "User already exists!"}), 400
 
@@ -164,7 +170,7 @@ def update_plate():
         return jsonify({"message": "You can only update plates for your own ID."}), 403
 
     try:
-        # Check if plate belongs to  Teacher (driver)
+        # Check if plate belongs to Teacher (driver)
         plate_doc = plates_ref.document(old_plate).get()
         if not plate_doc.exists or plate_doc.to_dict().get('id_number') != id_number:
             return jsonify({"message": "No license plate found for the given ID!"}), 404
@@ -191,7 +197,7 @@ def delete_plate():
         return jsonify({"message": "You can only delete plates for your own ID."}), 403
 
     try:
-        # Verify plate belongs to  Teacher (driver)
+        # Verify plate belongs to Teacher (driver)
         plate_doc = plates_ref.document(plate).get()
         if not plate_doc.exists or plate_doc.to_dict().get('id_number') != id_number:
             return jsonify({"message": "No license plate found for the given ID!"}), 404
@@ -212,7 +218,7 @@ def delete_driver():
     id_number = request.form.get('delete_driver_id')
 
     try:
-        # Delete  Teacher (driver) and associated plates
+        # Delete Teacher (driver) and associated plates
         batch = db.batch()
         
         # Delete all plates for this Teacher (driver)
@@ -220,7 +226,7 @@ def delete_driver():
         for plate in plates:
             batch.delete(plate.reference)
         
-        # Delete  Teacher (driver)
+        # Delete Teacher (driver)
         batch.delete(users_ref.document(id_number))
         batch.delete(drivers_ref.document(id_number))
         
@@ -235,12 +241,42 @@ def detect():
         return jsonify({"error": "No image provided"}), 400
         
     file = request.files['image']
-    file.save("temp.jpg")
+    temp_path = "temp.jpg"
+    file.save(temp_path)
     
-    results = model.predict(source="temp.jpg")
-    gate_open = any(box.cls == 2 for result in results for box in result.boxes)
+    # Use plate detection model
+    plate_results = plate_model.predict(source=temp_path)
     
-    return jsonify({"gate_open": gate_open})
+    # Use general object detection model
+    object_results = object_model.predict(source=temp_path)
+    
+    # Process plate results
+    plates = []
+    for result in plate_results:
+        for box in result.boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            plate_img = cv2.imread(temp_path)[y1:y2, x1:x2]
+            plates.append({
+                "coordinates": [x1, y1, x2, y2],
+                "image": plate_img.tolist() if plate_img is not None else None
+            })
+    
+    # Process object detection results
+    objects = []
+    for result in object_results:
+        for box in result.boxes:
+            cls = int(box.cls[0])
+            conf = float(box.conf[0])
+            objects.append({
+                "class": result.names[cls],
+                "confidence": conf,
+                "coordinates": box.xyxy[0].tolist()
+            })
+    
+    return jsonify({
+        "plates": plates,
+        "objects": objects
+    })
 
 @app.route('/')
 def index():
