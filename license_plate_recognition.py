@@ -12,6 +12,7 @@ from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.tasks import DetectionModel
 import os
 from datetime import datetime
+import pytesseract
 
 # ========== ARDUINO GATE CONTROLLER ==========
 class ArduinoGateController:
@@ -80,8 +81,7 @@ class LicensePlateSystem:
         torch.serialization.add_safe_globals([Conv, DetectionModel])
         
         # Initialize models
-        self.plate_model = YOLO(r"C:\Users\siyam\Documents\thesis-1\content\runs\license_plate_model2\weights\best.pt")
-        self.vehicle_model = YOLO("yolov8n.pt")
+        self.plate_model = YOLO(r"C:\Users\siyam\Documents\thesis-1\runs1\detect\train2\weights\best.pt")
         self.reader = easyocr.Reader(['en'])
         
         # Initialize Arduino controller
@@ -92,6 +92,9 @@ class LicensePlateSystem:
         self.plate_confidence = 0.5
         self.api_url = "http://localhost:5000"  # Flask API endpoint
         self.output_root = "detection_results"  # Root folder for all outputs
+        
+        # Tesseract config
+        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
         
         # Create output directory structure
         self.create_output_dirs()
@@ -117,32 +120,91 @@ class LicensePlateSystem:
             'original': os.path.join(self.output_root, "original_frames"),
             'processed': os.path.join(self.output_root, "processed_frames"),
             'plates': os.path.join(self.output_root, "plate_crops"),
-            'logs': os.path.join(self.output_root, "logs")
+            'logs': os.path.join(self.output_root, "logs"),
+            'tesseract': os.path.join(self.output_root, "tesseract_results")
         }
         
         for dir_path in self.dirs.values():
             os.makedirs(dir_path, exist_ok=True)
 
     def preprocess_plate(self, plate_img):
-        """Enhanced image preprocessing for better OCR"""
+        """Enhanced image preprocessing combining both methods"""
+        # Convert to grayscale
         gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        enhanced = clahe.apply(gray)
+        
+        # Denoising
+        denoised = cv2.fastNlMeansDenoising(gray, h=10)
+        
+        # Contrast enhancement
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(denoised)
+        
+        # Binarization
         _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        return thresh
+        
+        # Morphological operations
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+        processed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        
+        return processed
+
+    def extract_text_with_easyocr(self, plate_img):
+        """Extract text using EasyOCR"""
+        results = self.reader.readtext(plate_img, detail=0,
+                                     allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+        return results[0] if results else ""
+
+    def extract_text_with_tesseract(self, plate_img, language='amh+eng'):
+        """Improved text extraction for license plates with Amharic and English support"""
+        # Convert to grayscale
+        gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
+        
+        # Apply preprocessing
+        # 1. Denoising
+        denoised = cv2.fastNlMeansDenoising(gray, h=10)
+        
+        # 2. Contrast enhancement
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(denoised)
+        
+        # 3. Binarization
+        _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # 4. Morphological operations
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+        processed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        
+        # Try different PSM modes for better results
+        custom_config = r'--oem 3 --psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        text = pytesseract.image_to_string(processed, lang=language, config=custom_config)
+        
+        # Post-process the extracted text
+        text = text.strip()
+        text = ' '.join(text.split())  # Remove extra whitespace
+        return text
 
     def extract_plate_text(self, plate_img, save_path=None):
-        """Extract text from license plate image with visualization"""
+        """Enhanced text extraction with both OCR methods and Amharic support"""
         processed = self.preprocess_plate(plate_img)
-        results = self.reader.readtext(processed, detail=0,
-                                     allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ')
         
         # Save processed plate image if requested
         if save_path:
             cv2.imwrite(save_path, processed)
             print(f"Saved processed plate image to: {save_path}")
         
-        return results[0] if results else ""
+        # Try both OCR methods
+        easyocr_text = self.extract_text_with_easyocr(processed)
+        tesseract_text = self.extract_text_with_tesseract(plate_img)  # Use original image for Tesseract
+        
+        # Save Tesseract results separately
+        tesseract_path = os.path.join(self.dirs['tesseract'], os.path.basename(save_path or "temp_plate.jpg"))
+        with open(tesseract_path.replace('.jpg', '.txt'), 'w') as f:
+            f.write(f"EasyOCR: {easyocr_text}\nTesseract: {tesseract_text}")
+        
+        # Return the most confident result
+        if len(easyocr_text) >= len(tesseract_text):
+            return easyocr_text
+        return tesseract_text
 
     def check_authorization(self, plate_text):
         """Check if plate is authorized in database via Flask API"""
@@ -158,21 +220,11 @@ class LicensePlateSystem:
             print(f"API request error: {e}")
             return False
 
-    def process_frame(self, frame, frame_count=None):
+    def process_frame(self, frame):
         """Process single frame and control gate with visualization"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Step 1: Vehicle detection
-        vehicle_results = self.vehicle_model(frame, verbose=False)
-        vehicle_detected = any(int(box.cls) in self.vehicle_classes 
-                             for result in vehicle_results 
-                             for box in result.boxes)
-        
-        if not vehicle_detected:
-            self.gate_controller.close_gate()
-            return frame, "", False
-        
-        # Step 2: License plate recognition
+        # Step 1: License plate recognition
         plate_results = self.plate_model(frame, conf=self.plate_confidence, verbose=False)
         authorized = False
         
@@ -267,82 +319,6 @@ class LicensePlateSystem:
         
         return authorized
 
-    def process_video(self, video_path, frame_skip=3):
-        """Process video file or live camera feed with visualization"""
-        cap = cv2.VideoCapture(video_path if isinstance(video_path, str) else int(video_path))
-        if not cap.isOpened():
-            print(f"Error opening video source: {video_path}")
-            return
-            
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        # Prepare output video
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if isinstance(video_path, str):
-            output_path = os.path.join(self.output_root, f"{Path(video_path).stem}_processed_{timestamp}.mp4")
-        else:
-            output_path = os.path.join(self.output_root, f"live_output_{timestamp}.mp4")
-            
-        out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), 
-                            fps//frame_skip, (width, height))
-        
-        frame_count = 0
-        plates_data = []
-        
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-                
-            frame_count += 1
-            if frame_count % frame_skip != 0:
-                continue
-                
-            # Save original frame periodically
-            if frame_count % (fps * 5) == 0:  # Save every 5 seconds
-                original_path = os.path.join(self.dirs['original'], f"frame_{frame_count}_{timestamp}.jpg")
-                cv2.imwrite(original_path, frame)
-                print(f"Saved original frame {frame_count} to: {original_path}")
-                
-            processed_frame, plate_text, authorized = self.process_frame(frame, frame_count)
-            out.write(processed_frame)
-            
-            if self.gui_enabled:
-                try:
-                    cv2.imshow('License Plate Recognition', processed_frame)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
-                except:
-                    self.gui_enabled = False
-                    print("Failed to display video - continuing in headless mode")
-            
-            if plate_text:
-                plates_data.append({
-                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    'frame': frame_count,
-                    'plate_text': plate_text,
-                    'authorized': authorized,
-                    'gate_status': 'OPEN' if authorized else 'CLOSED'
-                })
-            
-            self.gate_controller.check_auto_close()
-                
-        cap.release()
-        out.release()
-        if self.gui_enabled:
-            cv2.destroyAllWindows()
-        
-        # Save plate data
-        if plates_data:
-            plates_path = os.path.join(self.dirs['logs'], f"plate_data_{timestamp}.csv")
-            pd.DataFrame(plates_data).to_csv(plates_path, index=False)
-            print(f"Saved plate data to: {plates_path}")
-            
-        self.gate_controller.close_gate()
-        print(f"\nProcessing complete. Results saved to: {output_path}")
-
 # ========== MAIN EXECUTION ==========
 if __name__ == '__main__':
     # Initialize system
@@ -353,7 +329,7 @@ if __name__ == '__main__':
         print("Warning: Running without Arduino connection")
     
     # Process image
-    image_path = r"C:\Users\siyam\Pictures\thesis_file\my\mc.jpeg"
+    image_path = r"C:\Users\siyam\Pictures\thesis_file\images\download1.jpeg"
     system.process_image(image_path)
     
     # OR process video/live camera
