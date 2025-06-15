@@ -9,7 +9,7 @@
 Servo gateServo;
 bool gateOpen = false;
 unsigned long gateOpenTime = 0;
-const unsigned long GATE_OPEN_DURATION = 5000; // 5 seconds
+const unsigned long GATE_OPEN_DURATION = 10000; // 10 seconds
 const int servoPin = 9;
 
 void setup() {

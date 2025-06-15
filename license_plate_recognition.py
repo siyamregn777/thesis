@@ -20,9 +20,6 @@ class ArduinoGateController:
         self.port = port
         self.baudrate = baudrate
         self.serial_conn = None
-        self.gate_status = False
-        self.last_open_time = 0
-        self.gate_open_duration = 5000  # 5 seconds in milliseconds
         self.connect()
         
     def connect(self):
@@ -33,46 +30,40 @@ class ArduinoGateController:
             self.serial_conn = serial.Serial(self.port, self.baudrate, timeout=1)
             time.sleep(2)  # Allow Arduino to initialize
             print(f"Connected to Arduino on {self.port}")
-            self.close_gate()  # Initialize with closed gate
         except Exception as e:
             print(f"Arduino connection error: {e}")
             self.serial_conn = None
     
-    def control_gate(self, open_gate):
-        """Send gate control command to Arduino"""
+    def open_gate(self):
+        """Send open command to Arduino which will handle the timing"""
         if not self.serial_conn:
             print("No Arduino connection!")
             return False
             
         try:
-            if open_gate and not self.gate_status:
-                self.serial_conn.write(b'1')  # Send open command
-                self.gate_status = True
-                self.last_open_time = time.time() * 1000  # Current time in ms
-                print("Gate opened")
-            elif not open_gate and self.gate_status:
-                self.serial_conn.write(b'0')  # Send close command
-                self.gate_status = False
-                print("Gate closed")
+            self.serial_conn.write(b'1')  # Send open command
+            print("Gate open command sent")
             return True
         except Exception as e:
             print(f"Gate control error: {e}")
             return False
     
-    def check_auto_close(self):
-        """Auto-close gate after duration if open"""
-        if self.gate_status and ((time.time() * 1000) - self.last_open_time > self.gate_open_duration):
-            self.control_gate(False)
-    
-    def open_gate(self):
-        self.control_gate(True)
-    
     def close_gate(self):
-        self.control_gate(False)
+        """Send immediate close command to Arduino"""
+        if not self.serial_conn:
+            print("No Arduino connection!")
+            return False
+            
+        try:
+            self.serial_conn.write(b'0')  # Send close command
+            print("Gate close command sent")
+            return True
+        except Exception as e:
+            print(f"Gate control error: {e}")
+            return False
     
     def __del__(self):
         if self.serial_conn:
-            self.close_gate()
             self.serial_conn.close()
 
 # ========== LICENSE PLATE RECOGNITION SYSTEM ==========
@@ -303,9 +294,6 @@ class LicensePlateSystem:
         print(f"\nProcessing complete. Gate status: {'OPEN' if authorized else 'CLOSED'}")
         print(f"Detected plate: {plate_text if plate_text else 'None'}")
         
-        # Auto-close check
-        self.gate_controller.check_auto_close()
-        
         # Display results only if GUI is available
         if self.gui_enabled:
             try:
@@ -319,6 +307,31 @@ class LicensePlateSystem:
         
         return authorized
 
+    def process_video(self, video_source=0):
+        """Process video stream (file or camera)"""
+        cap = cv2.VideoCapture(video_source)
+        if not cap.isOpened():
+            print(f"Error opening video source: {video_source}")
+            return
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Process frame
+            processed_frame, plate_text, authorized = self.process_frame(frame)
+            
+            # Display results
+            if self.gui_enabled:
+                cv2.imshow("License Plate Recognition", processed_frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+        
+        cap.release()
+        if self.gui_enabled:
+            cv2.destroyAllWindows()
+
 # ========== MAIN EXECUTION ==========
 if __name__ == '__main__':
     # Initialize system
@@ -328,10 +341,15 @@ if __name__ == '__main__':
     if system.gate_controller.serial_conn is None:
         print("Warning: Running without Arduino connection")
     
-    # Process image
+    # Example usage options:
+    
+    # 1. Process single image
     image_path = r"C:\Users\siyam\Pictures\thesis_file\images\download1.jpeg"
     system.process_image(image_path)
     
-    # OR process video/live camera
-    # system.process_video(0)  # For live camera
-    # system.process_video("path/to/video.mp4")  # For video file
+    # 2. Process video file
+    # video_path = "path/to/your/video.mp4"
+    # system.process_video(video_path)
+    
+    # 3. Process live camera feed
+    # system.process_video(0)  # 0 for default camera
