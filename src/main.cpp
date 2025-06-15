@@ -1,80 +1,92 @@
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
+#ifndef LOW
+#define LOW 0
+#define HIGH 1
+#endif
 
-const char* ssid = "Wokwi-GUEST";
-const char* password = "";
-const char* flask_server = "http://localhost:5000/check_plate?plate=";
+#include <Arduino.h> 
+#include <Servo.h>
 
-const int ledGrantedPin = 12;  // Green LED
-const int ledDeniedPin = 14;   // Red LED
+Servo gateServo;
+bool gateOpen = false;
+unsigned long gateOpenTime = 0;
+const unsigned long GATE_OPEN_DURATION = 5000; // 5 seconds
+
+const int triggerPin = 6;
+const int echoPin = 7;
+const int servoPin = 9;
+const int detectionThreshold = 30;
+bool systemEnabled = false; // Added system control flag
 
 void setup() {
-  Serial.begin(115200);
-  pinMode(ledGrantedPin, OUTPUT);
-  pinMode(ledDeniedPin, OUTPUT);
-  
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nConnected to WiFi!");
+  pinMode(triggerPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  gateServo.attach(servoPin);
+  Serial.begin(9600);
+  gateServo.write(0); // Start closed
+  Serial.println("System initialized");
+}
+
+long readUltrasonicDistance() {
+  digitalWrite(triggerPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(triggerPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(triggerPin, LOW);
+  return pulseIn(echoPin, HIGH);
 }
 
 void loop() {
-  // Reset LEDs
-  digitalWrite(ledGrantedPin, LOW);
-  digitalWrite(ledDeniedPin, LOW);
-
-  // Handle WiFi disconnection
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi disconnected - reconnecting...");
-    WiFi.reconnect();
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.print(".");
-    }
-    Serial.println("\nReconnected!");
-  }
-
-  if (Serial.available()) {
-    String plate = Serial.readStringUntil('\n');
-    plate.trim();
+  // Handle serial commands from Python
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
     
-    if (plate.length() > 0) {
-      Serial.println("Checking plate: " + plate);
-      
-      HTTPClient http;
-      http.begin(flask_server + plate);
-      http.setTimeout(5000);
-      
-      int httpCode = http.GET();
-      
-      if (httpCode == 200) {
-        String payload = http.getString();
-        DynamicJsonDocument doc(1024);
-        deserializeJson(doc, payload);
-        
-        if (doc["registered"] == true) {
-          Serial.println("Access Granted");
-          digitalWrite(ledGrantedPin, HIGH);
-        } else {
-          Serial.println("Access Denied");
-          digitalWrite(ledDeniedPin, HIGH);
-        }
-      } else {
-        Serial.printf("HTTP Error: %d\n", httpCode);
-        // Error blink pattern
-        for(int i=0; i<3; i++) {
-          digitalWrite(ledDeniedPin, HIGH);
-          delay(200);
-          digitalWrite(ledDeniedPin, LOW);
-          delay(200);
-        }
-      }
-      http.end();
+    if (command == "ENABLE") {
+      systemEnabled = true;
+      Serial.println("System enabled - Ready for plate recognition");
+    } 
+    else if (command == "DISABLE") {
+      systemEnabled = false;
+      gateServo.write(0); // Force close gate when disabled
+      gateOpen = false;
+      Serial.println("System disabled - Manual mode");
+    }
+    else if (command == "1" && systemEnabled && !gateOpen) {
+      gateServo.write(120); // Open gate
+      gateOpen = true;
+      gateOpenTime = millis();
+      Serial.println("Gate opened by command");
+    } 
+    else if (command == "0" && gateOpen) {
+      gateServo.write(0); // Close gate
+      gateOpen = false;
+      Serial.println("Gate closed by command");
     }
   }
-  delay(100);
+
+  // Auto-close after duration
+  if (gateOpen && (millis() - gateOpenTime > GATE_OPEN_DURATION)) {
+    gateServo.write(0);
+    gateOpen = false;
+    Serial.println("Gate auto-closed after timeout");
+  }
+
+  // Only use ultrasonic sensor when system is disabled
+  if (!systemEnabled) {
+    int distance = 0.01723 * readUltrasonicDistance();
+    if (distance > 0 && distance < detectionThreshold) {
+      if (!gateOpen) {
+        gateServo.write(120);
+        gateOpen = true;
+        gateOpenTime = millis();
+        Serial.println("Gate opened by sensor (manual mode)");
+      }
+    } else if (gateOpen && (millis() - gateOpenTime > GATE_OPEN_DURATION)) {
+      gateServo.write(0);
+      gateOpen = false;
+      Serial.println("Gate auto-closed by sensor");
+    }
+  }
+
+  delay(100); // Main loop delay
 }

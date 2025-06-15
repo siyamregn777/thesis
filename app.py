@@ -5,16 +5,31 @@ from firebase_admin import credentials, firestore
 from firebase_admin.exceptions import FirebaseError
 import os
 import cv2
+import serial
+import threading
+from datetime import datetime
+import time
+import easyocr
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # Secure secret key
 
-# ========== MODELS INITIALIZATION ==========
-# Load custom license plate detection model
-plate_model_path = r"C:\Users\siyam\Documents\thesis-1\runs\detect\train2\weights\best.pt"
-plate_model = YOLO(plate_model_path)
+# ========== SYSTEM INITIALIZATION ==========
+# Initialize OCR reader
+reader = easyocr.Reader(['en'])
 
-# Load general object detection model (YOLOv8n)
+# ========== ARDUINO COMMUNICATION SETUP ==========
+try:
+    arduino = serial.Serial('COM4', 9600, timeout=1)
+    time.sleep(2)  # Allow Arduino to initialize
+    arduino.write(b"DISABLE\n")  # Start with system disabled
+    print("Connected to Arduino and set to DISABLED mode")
+except serial.SerialException as e:
+    print(f"Arduino connection error: {e}")
+    arduino = None
+
+# ========== MODELS INITIALIZATION ==========
+plate_model = YOLO(r"C:\Users\siyam\Documents\thesis-1\content\runs\license_plate_model2\weights\best.pt")
 object_model = YOLO("yolov8n.pt")
 
 # ========== FIREBASE INITIALIZATION ==========
@@ -31,16 +46,138 @@ users_ref = db.collection('users')
 def init_firebase():
     """Initialize Firebase collections with default data"""
     try:
-        admins_ref.document('admin').set({
-            'username': 'admin',
-            'password': '12341234'
-        })
-        print("Firebase initialized successfully")
+        if not admins_ref.document('admin').get().exists:
+            admins_ref.document('admin').set({
+                'username': 'admin',
+                'password': '12341234'
+            })
+            print("Firebase admin initialized")
     except FirebaseError as e:
         print(f"Firebase initialization error: {e}")
 
+def extract_plate_text(plate_img):
+    """Enhanced plate text extraction with EasyOCR"""
+    try:
+        # Preprocess image
+        gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # OCR with character whitelist
+        results = reader.readtext(thresh, detail=0, allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+        return results[0] if results else ""
+    except Exception as e:
+        print(f"OCR error: {e}")
+        return ""
+
+def control_gate(state):
+    """Send gate control command to Arduino"""
+    if not arduino:
+        return False
+    try:
+        command = '1' if state else '0'
+        arduino.write(command.encode())
+        return True
+    except Exception as e:
+        print(f"Gate control error: {e}")
+        return False
+
+def arduino_listener():
+    """Thread function to handle Arduino communication"""
+    while True:
+        if arduino and arduino.in_waiting > 0:
+            line = arduino.readline().decode('utf-8').strip()
+            if line == "CAPTURE":
+                process_capture_request()
+
+def process_capture_request():
+    """Process image capture request from Arduino"""
+    print("Processing capture request from Arduino")
+    
+    # Enable system temporarily
+    if arduino:
+        arduino.write(b"ENABLE\n")
+    
+    cap = cv2.VideoCapture(0)
+    ret, frame = cap.read()
+    if ret:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.makedirs("captures", exist_ok=True)
+        save_path = f"captures/capture_{timestamp}.jpg"
+        cv2.imwrite(save_path, frame)
+        
+        # Process the image
+        process_detection(frame, save_path)
+    else:
+        print("Failed to capture image")
+        if arduino:
+            arduino.write(b"NO_PLATE\n")
+    
+    cap.release()
+    
+    # Disable system after processing
+    if arduino:
+        arduino.write(b"DISABLE\n")
+
+def process_detection(frame, image_path=None):
+    """Process frame for vehicles and license plates"""
+    # Vehicle detection
+    vehicle_results = object_model(frame, verbose=False)
+    vehicle_detected = any(int(box.cls) in [2, 3, 5, 7]  # Cars, motorcycles, buses, trucks
+                          for result in vehicle_results 
+                          for box in result.boxes)
+    
+    if not vehicle_detected:
+        print("No vehicle detected")
+        if arduino:
+            arduino.write(b"NO_VEHICLE\n")
+        return None
+    
+    # License plate recognition
+    plate_results = plate_model(frame, conf=0.5, verbose=False)
+    authorized = False
+    
+    for result in plate_results:
+        for box in result.boxes.xyxy.cpu().numpy():
+            x1, y1, x2, y2 = map(int, box)
+            plate_img = frame[y1:y2, x1:x2]
+            
+            plate_text = extract_plate_text(plate_img)
+            if plate_text:
+                print(f"Detected plate: {plate_text}")
+                # Check database
+                plate_doc = plates_ref.document(plate_text).get()
+                authorized = plate_doc.exists
+                
+                # Control gate
+                if authorized:
+                    print(f"Access granted for {plate_text}")
+                    control_gate(True)
+                    # Schedule auto-close
+                    threading.Timer(5.0, lambda: control_gate(False)).start()
+                else:
+                    print(f"Access denied for {plate_text}")
+                    control_gate(False)
+                
+                # Save plate image if path provided
+                if image_path:
+                    plate_path = f"captures/plate_{plate_text}_{datetime.now().strftime('%H%M%S')}.jpg"
+                    cv2.imwrite(plate_path, plate_img)
+                
+                return {
+                    'plate': plate_text,
+                    'authorized': authorized,
+                    'coordinates': [x1, y1, x2, y2]
+                }
+    
+    print("No valid license plates detected")
+    if arduino:
+        arduino.write(b"NO_PLATE\n")
+    return None
+
 # ========== ROUTES ==========
-@app.route('/home')
+@app.route('/')
 def home():
     return render_template('home.html')
 
@@ -97,7 +234,6 @@ def signup():
             if users_ref.document(id_number).get().exists:
                 return jsonify({"message": "User already exists!"}), 400
 
-            # Add Teacher (driver)
             drivers_ref.document(id_number).set({'id_number': id_number})
             users_ref.document(id_number).set({
                 'id_number': id_number,
@@ -126,7 +262,10 @@ def check_plate():
     if not plate:
         return jsonify({"error": "Plate number required"}), 400
     plate_doc = plates_ref.document(plate).get()
-    return jsonify({"registered": plate_doc.exists})
+    return jsonify({
+        "registered": plate_doc.exists,
+        "details": plate_doc.to_dict() if plate_doc.exists else None
+    })
 
 @app.route('/register_plate', methods=['POST'])
 def register_plate():
@@ -140,98 +279,18 @@ def register_plate():
         return jsonify({"message": "You can only register plates for your own ID."}), 403
 
     try:
-        # Check if plate exists
         if plates_ref.document(plate).get().exists:
             return jsonify({"message": "License Plate already registered!"}), 400
 
-        # Add driver if not exists
         if not drivers_ref.document(id_number).get().exists:
             drivers_ref.document(id_number).set({'id_number': id_number})
 
-        # Register plate
         plates_ref.document(plate).set({
             'plate': plate,
-            'id_number': id_number
+            'id_number': id_number,
+            'registered_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         return jsonify({"message": "License Plate Registered!"}), 200
-    except Exception as e:
-        return jsonify({"message": f"Error: {str(e)}"}), 500
-
-@app.route('/update_plate', methods=['POST'])
-def update_plate():
-    if 'logged_in' not in session:
-        return jsonify({"message": "Please log in to perform this action."}), 401
-
-    id_number = request.form.get('update_id')
-    old_plate = request.form.get('old_plate')
-    new_plate = request.form.get('new_plate')
-
-    if not session.get('is_admin') and id_number != session.get('user_id'):
-        return jsonify({"message": "You can only update plates for your own ID."}), 403
-
-    try:
-        # Check if plate belongs to Teacher (driver)
-        plate_doc = plates_ref.document(old_plate).get()
-        if not plate_doc.exists or plate_doc.to_dict().get('id_number') != id_number:
-            return jsonify({"message": "No license plate found for the given ID!"}), 404
-
-        # Update plate
-        plates_ref.document(old_plate).delete()
-        plates_ref.document(new_plate).set({
-            'plate': new_plate,
-            'id_number': id_number
-        })
-        return jsonify({"message": "License Plate Updated!"}), 200
-    except Exception as e:
-        return jsonify({"message": f"Error: {str(e)}"}), 500
-
-@app.route('/delete_plate', methods=['POST'])
-def delete_plate():
-    if 'logged_in' not in session:
-        return jsonify({"message": "Please log in to perform this action."}), 401
-
-    id_number = request.form.get('delete_id')
-    plate = request.form.get('delete_plate')
-
-    if not session.get('is_admin') and id_number != session.get('user_id'):
-        return jsonify({"message": "You can only delete plates for your own ID."}), 403
-
-    try:
-        # Verify plate belongs to Teacher (driver)
-        plate_doc = plates_ref.document(plate).get()
-        if not plate_doc.exists or plate_doc.to_dict().get('id_number') != id_number:
-            return jsonify({"message": "No license plate found for the given ID!"}), 404
-
-        plates_ref.document(plate).delete()
-        return jsonify({"message": "License Plate Deleted!"}), 200
-    except Exception as e:
-        return jsonify({"message": f"Error: {str(e)}"}), 500
-
-@app.route('/delete_driver', methods=['POST'])
-def delete_driver():
-    if 'logged_in' not in session:
-        return jsonify({"message": "Please log in to perform this action."}), 401
-
-    if not session.get('is_admin'):
-        return jsonify({"message": "Only admins can delete drivers."}), 403
-
-    id_number = request.form.get('delete_driver_id')
-
-    try:
-        # Delete Teacher (driver) and associated plates
-        batch = db.batch()
-        
-        # Delete all plates for this Teacher (driver)
-        plates = plates_ref.where('id_number', '==', id_number).stream()
-        for plate in plates:
-            batch.delete(plate.reference)
-        
-        # Delete Teacher (driver)
-        batch.delete(users_ref.document(id_number))
-        batch.delete(drivers_ref.document(id_number))
-        
-        batch.commit()
-        return jsonify({"message": "Driver and associated license plates deleted!"}), 200
     except Exception as e:
         return jsonify({"message": f"Error: {str(e)}"}), 500
 
@@ -241,47 +300,46 @@ def detect():
         return jsonify({"error": "No image provided"}), 400
         
     file = request.files['image']
-    temp_path = "temp.jpg"
+    temp_path = "temp_upload.jpg"
     file.save(temp_path)
     
-    # Use plate detection model
-    plate_results = plate_model.predict(source=temp_path)
-    
-    # Use general object detection model
-    object_results = object_model.predict(source=temp_path)
-    
-    # Process plate results
-    plates = []
-    for result in plate_results:
-        for box in result.boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            plate_img = cv2.imread(temp_path)[y1:y2, x1:x2]
-            plates.append({
-                "coordinates": [x1, y1, x2, y2],
-                "image": plate_img.tolist() if plate_img is not None else None
-            })
-    
-    # Process object detection results
-    objects = []
-    for result in object_results:
-        for box in result.boxes:
-            cls = int(box.cls[0])
-            conf = float(box.conf[0])
-            objects.append({
-                "class": result.names[cls],
-                "confidence": conf,
-                "coordinates": box.xyxy[0].tolist()
-            })
-    
-    return jsonify({
-        "plates": plates,
-        "objects": objects
-    })
+    try:
+        frame = cv2.imread(temp_path)
+        if frame is None:
+            return jsonify({"error": "Could not read image"}), 400
+            
+        result = process_detection(frame, temp_path)
+        if result:
+            return jsonify(result)
+        return jsonify({"message": "No valid license plates detected"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+@app.route('/test_gate', methods=['POST'])
+def test_gate():
+    if 'logged_in' not in session or not session.get('is_admin'):
+        return jsonify({"message": "Admin access required"}), 403
+        
+    state = request.json.get('state')
+    if state not in [True, False]:
+        return jsonify({"message": "Invalid state"}), 400
+        
+    success = control_gate(state)
+    return jsonify({
+        "success": success,
+        "message": f"Gate {'opened' if state else 'closed'}"
+    })
 
 if __name__ == '__main__':
     init_firebase()
+    
+    # Start Arduino listener thread
+    if arduino:
+        arduino_thread = threading.Thread(target=arduino_listener, daemon=True)
+        arduino_thread.start()
+        print("Arduino listener thread started")
+    
     app.run(host='0.0.0.0', port=5000, debug=True)

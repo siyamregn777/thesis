@@ -189,7 +189,7 @@ input[type="submit"]:hover {
 
 /* Home Page Styles */
 .content {
-    background-image: url('./images/pexels-quentin-martinez-2147503099-31192011.jpg');
+    background-image: url('./images/pexels-hazardos-804128.jpg');
     height: 100vh;
     background-position: center;
     background-repeat: no-repeat;
@@ -244,7 +244,7 @@ input[type="submit"]:hover {
     color:rgb(255, 255, 255);
 }
 .content h1 {
-    color: #000;
+    color: #fff;
     font-size: 50px;
     margin-top: 20px;
     text-align: center;
