@@ -10,8 +10,6 @@ import time
 from ultralytics import YOLO
 from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.tasks import DetectionModel
-import os
-from datetime import datetime
 
 # ========== ARDUINO GATE CONTROLLER ==========
 class ArduinoGateController:
@@ -91,37 +89,6 @@ class LicensePlateSystem:
         self.vehicle_classes = [2, 3, 5, 7]  # COCO classes: car, motorcycle, bus, truck
         self.plate_confidence = 0.5
         self.api_url = "http://localhost:5000"  # Flask API endpoint
-        self.output_root = "detection_results"  # Root folder for all outputs
-        
-        # Create output directory structure
-        self.create_output_dirs()
-        
-        # Check if GUI is available
-        self.gui_enabled = self.check_gui_support()
-
-    def check_gui_support(self):
-        """Check if OpenCV GUI functions are available"""
-        try:
-            test_window = np.zeros((100,100,3), np.uint8)
-            cv2.imshow('test', test_window)
-            cv2.destroyAllWindows()
-            return True
-        except:
-            print("GUI not available - running in headless mode")
-            return False
-
-    def create_output_dirs(self):
-        """Create organized directory structure for outputs"""
-        os.makedirs(self.output_root, exist_ok=True)
-        self.dirs = {
-            'original': os.path.join(self.output_root, "original_frames"),
-            'processed': os.path.join(self.output_root, "processed_frames"),
-            'plates': os.path.join(self.output_root, "plate_crops"),
-            'logs': os.path.join(self.output_root, "logs")
-        }
-        
-        for dir_path in self.dirs.values():
-            os.makedirs(dir_path, exist_ok=True)
 
     def preprocess_plate(self, plate_img):
         """Enhanced image preprocessing for better OCR"""
@@ -131,17 +98,11 @@ class LicensePlateSystem:
         _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         return thresh
 
-    def extract_plate_text(self, plate_img, save_path=None):
-        """Extract text from license plate image with visualization"""
+    def extract_plate_text(self, plate_img):
+        """Extract text from license plate image"""
         processed = self.preprocess_plate(plate_img)
         results = self.reader.readtext(processed, detail=0,
                                      allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ')
-        
-        # Save processed plate image if requested
-        if save_path:
-            cv2.imwrite(save_path, processed)
-            print(f"Saved processed plate image to: {save_path}")
-        
         return results[0] if results else ""
 
     def check_authorization(self, plate_text):
@@ -158,10 +119,8 @@ class LicensePlateSystem:
             print(f"API request error: {e}")
             return False
 
-    def process_frame(self, frame, frame_count=None):
-        """Process single frame and control gate with visualization"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+    def process_frame(self, frame):
+        """Process single frame and control gate"""
         # Step 1: Vehicle detection
         vehicle_results = self.vehicle_model(frame, verbose=False)
         vehicle_detected = any(int(box.cls) in self.vehicle_classes 
@@ -183,22 +142,12 @@ class LicensePlateSystem:
                 x1, y1, x2, y2 = map(int, box)
                 plate_img = frame[y1:y2, x1:x2]
                 
-                # Generate unique filename for plate crop
-                plate_crop_path = os.path.join(self.dirs['plates'], f"plate_{timestamp}.jpg")
-                cv2.imwrite(plate_crop_path, plate_img)
-                print(f"Saved plate crop to: {plate_crop_path}")
-                
-                # Extract text with visualization
-                plate_text = self.extract_plate_text(plate_img, 
-                                                   os.path.join(self.dirs['plates'], f"plate_processed_{timestamp}.jpg"))
-                
+                plate_text = self.extract_plate_text(plate_img)
                 if plate_text:
                     authorized = self.check_authorization(plate_text)
                     status = "AUTHORIZED" if authorized else "UNAUTHORIZED"
                     color = (0, 255, 0) if authorized else (0, 0, 255)
                     
-                    # Add visualization
-                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(annotated_frame, f"{plate_text} - {status}", 
                                (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 
                                0.9, color, 2)
@@ -215,60 +164,39 @@ class LicensePlateSystem:
         self.gate_controller.close_gate()
         return frame, "", False
 
-    def process_image(self, image_path):
-        """Process single image with comprehensive output"""
+    def process_image(self, image_path, output_dir='output'):
+        """Process single image"""
+        Path(output_dir).mkdir(exist_ok=True)
         frame = cv2.imread(image_path)
         if frame is None:
             print(f"Error loading image: {image_path}")
             return False
-        
-        # Save original frame
-        original_path = os.path.join(self.dirs['original'], os.path.basename(image_path))
-        cv2.imwrite(original_path, frame)
-        print(f"Saved original image to: {original_path}")
             
         processed_frame, plate_text, authorized = self.process_frame(frame)
         
-        # Save processed frame
-        processed_path = os.path.join(self.dirs['processed'], f"processed_{os.path.basename(image_path)}")
-        cv2.imwrite(processed_path, processed_frame)
-        print(f"Saved processed image to: {processed_path}")
+        # Save results
+        output_path = f"{output_dir}/{Path(image_path).stem}_processed.jpg"
+        cv2.imwrite(output_path, processed_frame)
         
-        # Save log
-        log_entry = {
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'image_path': image_path,
-            'plate_text': plate_text if plate_text else "None",
-            'authorized': authorized,
-            'gate_status': 'OPEN' if authorized else 'CLOSED'
-        }
-        
-        log_path = os.path.join(self.dirs['logs'], "detection_log.csv")
-        log_df = pd.DataFrame([log_entry])
-        log_df.to_csv(log_path, mode='a', header=not os.path.exists(log_path), index=False)
-        print(f"Logged results to: {log_path}")
-        
-        print(f"\nProcessing complete. Gate status: {'OPEN' if authorized else 'CLOSED'}")
+        print(f"Processing complete. Gate status: {'OPEN' if authorized else 'CLOSED'}")
         print(f"Detected plate: {plate_text if plate_text else 'None'}")
         
         # Auto-close check
         self.gate_controller.check_auto_close()
-        
-        # Display results only if GUI is available
-        if self.gui_enabled:
-            try:
-                cv2.imshow("Original Image", frame)
-                cv2.imshow("Processed Image", processed_frame)
-                cv2.waitKey(0)
-                cv2.destroyAllWindows()
-            except:
-                self.gui_enabled = False
-                print("Failed to display images - continuing in headless mode")
-        
         return authorized
 
-    def process_video(self, video_path, frame_skip=3):
-        """Process video file or live camera feed with visualization"""
+    def process_video(self, video_path, output_dir='output', frame_skip=3):
+        """Process video file or live camera feed"""
+        gui_enabled = True
+        try:
+            test_window = np.zeros((100,100,3), np.uint8)
+            cv2.imshow('test', test_window)
+            cv2.destroyAllWindows()
+        except:
+            gui_enabled = False
+            print("GUI not available - running in headless mode")
+        
+        Path(output_dir).mkdir(exist_ok=True)
         cap = cv2.VideoCapture(video_path if isinstance(video_path, str) else int(video_path))
         if not cap.isOpened():
             print(f"Error opening video source: {video_path}")
@@ -278,12 +206,10 @@ class LicensePlateSystem:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
-        # Prepare output video
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if isinstance(video_path, str):
-            output_path = os.path.join(self.output_root, f"{Path(video_path).stem}_processed_{timestamp}.mp4")
+            output_path = f"{output_dir}/{Path(video_path).stem}_processed.mp4"
         else:
-            output_path = os.path.join(self.output_root, f"live_output_{timestamp}.mp4")
+            output_path = f"{output_dir}/live_output.mp4"
             
         out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), 
                             fps//frame_skip, (width, height))
@@ -300,48 +226,34 @@ class LicensePlateSystem:
             if frame_count % frame_skip != 0:
                 continue
                 
-            # Save original frame periodically
-            if frame_count % (fps * 5) == 0:  # Save every 5 seconds
-                original_path = os.path.join(self.dirs['original'], f"frame_{frame_count}_{timestamp}.jpg")
-                cv2.imwrite(original_path, frame)
-                print(f"Saved original frame {frame_count} to: {original_path}")
-                
-            processed_frame, plate_text, authorized = self.process_frame(frame, frame_count)
+            processed_frame, plate_text, authorized = self.process_frame(frame)
             out.write(processed_frame)
             
-            if self.gui_enabled:
-                try:
-                    cv2.imshow('License Plate Recognition', processed_frame)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
-                except:
-                    self.gui_enabled = False
-                    print("Failed to display video - continuing in headless mode")
+            if gui_enabled:
+                cv2.imshow('License Plate Recognition', processed_frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
             
             if plate_text:
                 plates_data.append({
-                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     'frame': frame_count,
                     'plate_text': plate_text,
                     'authorized': authorized,
-                    'gate_status': 'OPEN' if authorized else 'CLOSED'
+                    'timestamp': f"{frame_count/fps:.2f}s"
                 })
             
             self.gate_controller.check_auto_close()
                 
         cap.release()
         out.release()
-        if self.gui_enabled:
+        if gui_enabled:
             cv2.destroyAllWindows()
         
-        # Save plate data
         if plates_data:
-            plates_path = os.path.join(self.dirs['logs'], f"plate_data_{timestamp}.csv")
-            pd.DataFrame(plates_data).to_csv(plates_path, index=False)
-            print(f"Saved plate data to: {plates_path}")
+            pd.DataFrame(plates_data).to_csv(f"{output_dir}/plate_data.csv", index=False)
             
         self.gate_controller.close_gate()
-        print(f"\nProcessing complete. Results saved to: {output_path}")
+        print(f"Processing complete. Results saved to {output_path}")
 
 # ========== MAIN EXECUTION ==========
 if __name__ == '__main__':
@@ -353,7 +265,7 @@ if __name__ == '__main__':
         print("Warning: Running without Arduino connection")
     
     # Process image
-    image_path = r"C:\Users\siyam\Pictures\thesis_file\my\mc.jpeg"
+    image_path = r"C:\Users\siyam\Pictures\thesis_file\my\photo_13_2025-06-14_19-19-48.jpg"
     system.process_image(image_path)
     
     # OR process video/live camera

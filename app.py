@@ -5,7 +5,6 @@ from firebase_admin import credentials, firestore
 from firebase_admin.exceptions import FirebaseError
 import os
 import cv2
-import serial
 import threading
 from datetime import datetime
 import time
@@ -17,16 +16,6 @@ app.secret_key = os.urandom(24)  # Secure secret key
 # ========== SYSTEM INITIALIZATION ==========
 # Initialize OCR reader
 reader = easyocr.Reader(['en'])
-
-# ========== ARDUINO COMMUNICATION SETUP ==========
-try:
-    arduino = serial.Serial('COM4', 9600, timeout=1)
-    time.sleep(2)  # Allow Arduino to initialize
-    arduino.write(b"DISABLE\n")  # Start with system disabled
-    print("Connected to Arduino and set to DISABLED mode")
-except serial.SerialException as e:
-    print(f"Arduino connection error: {e}")
-    arduino = None
 
 # ========== MODELS INITIALIZATION ==========
 plate_model = YOLO(r"C:\Users\siyam\Documents\thesis-1\content\runs\license_plate_model2\weights\best.pt")
@@ -71,33 +60,9 @@ def extract_plate_text(plate_img):
         print(f"OCR error: {e}")
         return ""
 
-def control_gate(state):
-    """Send gate control command to Arduino"""
-    if not arduino:
-        return False
-    try:
-        command = '1' if state else '0'
-        arduino.write(command.encode())
-        return True
-    except Exception as e:
-        print(f"Gate control error: {e}")
-        return False
-
-def arduino_listener():
-    """Thread function to handle Arduino communication"""
-    while True:
-        if arduino and arduino.in_waiting > 0:
-            line = arduino.readline().decode('utf-8').strip()
-            if line == "CAPTURE":
-                process_capture_request()
-
 def process_capture_request():
-    """Process image capture request from Arduino"""
-    print("Processing capture request from Arduino")
-    
-    # Enable system temporarily
-    if arduino:
-        arduino.write(b"ENABLE\n")
+    """Process image capture request"""
+    print("Processing capture request")
     
     cap = cv2.VideoCapture(0)
     ret, frame = cap.read()
@@ -111,14 +76,8 @@ def process_capture_request():
         process_detection(frame, save_path)
     else:
         print("Failed to capture image")
-        if arduino:
-            arduino.write(b"NO_PLATE\n")
     
     cap.release()
-    
-    # Disable system after processing
-    if arduino:
-        arduino.write(b"DISABLE\n")
 
 def process_detection(frame, image_path=None):
     """Process frame for vehicles and license plates"""
@@ -130,8 +89,6 @@ def process_detection(frame, image_path=None):
     
     if not vehicle_detected:
         print("No vehicle detected")
-        if arduino:
-            arduino.write(b"NO_VEHICLE\n")
         return None
     
     # License plate recognition
@@ -150,15 +107,11 @@ def process_detection(frame, image_path=None):
                 plate_doc = plates_ref.document(plate_text).get()
                 authorized = plate_doc.exists
                 
-                # Control gate
+                # Print access status
                 if authorized:
                     print(f"Access granted for {plate_text}")
-                    control_gate(True)
-                    # Schedule auto-close
-                    threading.Timer(5.0, lambda: control_gate(False)).start()
                 else:
                     print(f"Access denied for {plate_text}")
-                    control_gate(False)
                 
                 # Save plate image if path provided
                 if image_path:
@@ -172,8 +125,6 @@ def process_detection(frame, image_path=None):
                 }
     
     print("No valid license plates detected")
-    if arduino:
-        arduino.write(b"NO_PLATE\n")
     return None
 
 # ========== ROUTES ==========
@@ -327,19 +278,11 @@ def test_gate():
     if state not in [True, False]:
         return jsonify({"message": "Invalid state"}), 400
         
-    success = control_gate(state)
     return jsonify({
-        "success": success,
-        "message": f"Gate {'opened' if state else 'closed'}"
+        "success": True,
+        "message": f"Gate {'opened' if state else 'closed'} (simulated)"
     })
 
 if __name__ == '__main__':
     init_firebase()
-    
-    # Start Arduino listener thread
-    if arduino:
-        arduino_thread = threading.Thread(target=arduino_listener, daemon=True)
-        arduino_thread.start()
-        print("Arduino listener thread started")
-    
     app.run(host='0.0.0.0', port=5000, debug=True)
