@@ -2,14 +2,11 @@ import cv2
 import easyocr
 import requests
 import numpy as np
-from pathlib import Path
 import pandas as pd
 import torch
 import serial
 import time
 from ultralytics import YOLO
-from ultralytics.nn.modules.conv import Conv
-from ultralytics.nn.tasks import DetectionModel
 import os
 from datetime import datetime
 import pytesseract
@@ -20,6 +17,7 @@ class ArduinoGateController:
         self.port = port
         self.baudrate = baudrate
         self.serial_conn = None
+        self.gate_status = False
         self.connect()
         
     def connect(self):
@@ -30,46 +28,57 @@ class ArduinoGateController:
             self.serial_conn = serial.Serial(self.port, self.baudrate, timeout=1)
             time.sleep(2)  # Allow Arduino to initialize
             print(f"Connected to Arduino on {self.port}")
+            self.close_gate()  # Initialize with closed gate
         except Exception as e:
             print(f"Arduino connection error: {e}")
             self.serial_conn = None
     
-    def open_gate(self):
-        """Send open command to Arduino which will handle the timing"""
+    def control_gate(self, open_gate):
+        """Send gate control command to Arduino"""
         if not self.serial_conn:
             print("No Arduino connection!")
             return False
             
         try:
-            self.serial_conn.write(b'1')  # Send open command
-            print("Gate open command sent")
+            if open_gate and not self.gate_status:
+                self.serial_conn.write(b'1')  # Send open command
+                self.gate_status = True
+                print("Gate opened")
+            elif not open_gate and self.gate_status:
+                self.serial_conn.write(b'0')  # Send close command
+                self.gate_status = False
+                print("Gate closed")
             return True
         except Exception as e:
             print(f"Gate control error: {e}")
             return False
+
+    def open_gate(self):
+        self.control_gate(True)
     
     def close_gate(self):
-        """Send immediate close command to Arduino"""
+        self.control_gate(False)
+    
+    def check_detection(self):
+        """Check if Arduino has detected a vehicle"""
         if not self.serial_conn:
-            print("No Arduino connection!")
             return False
             
-        try:
-            self.serial_conn.write(b'0')  # Send close command
-            print("Gate close command sent")
-            return True
-        except Exception as e:
-            print(f"Gate control error: {e}")
-            return False
+        if self.serial_conn.in_waiting > 0:
+            line = self.serial_conn.readline().decode().strip()
+            if line == "DETECTED":
+                return True
+        return False
     
     def __del__(self):
         if self.serial_conn:
+            self.close_gate()
             self.serial_conn.close()
 
 # ========== LICENSE PLATE RECOGNITION SYSTEM ==========
 class LicensePlateSystem:
     def __init__(self):
-        torch.serialization.add_safe_globals([Conv, DetectionModel])
+        torch.serialization.add_safe_globals([])
         
         # Initialize models
         self.plate_model = YOLO(r"C:\Users\siyam\Documents\thesis-1\runs1\detect\train2\weights\best.pt")
@@ -83,6 +92,7 @@ class LicensePlateSystem:
         self.plate_confidence = 0.5
         self.api_url = "http://localhost:5000"  # Flask API endpoint
         self.output_root = "detection_results"  # Root folder for all outputs
+        self.detection_timeout = 30  # Seconds to wait for detection
         
         # Tesseract config
         pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
@@ -258,29 +268,65 @@ class LicensePlateSystem:
         self.gate_controller.close_gate()
         return frame, "", False
 
-    def process_image(self, image_path):
-        """Process single image with comprehensive output"""
-        frame = cv2.imread(image_path)
-        if frame is None:
-            print(f"Error loading image: {image_path}")
-            return False
+    def wait_for_detection(self):
+        """Wait for vehicle detection from ultrasonic sensor"""
+        print(f"Waiting for vehicle detection (timeout: {self.detection_timeout}s)...")
+        start_time = time.time()
         
-        # Save original frame
-        original_path = os.path.join(self.dirs['original'], os.path.basename(image_path))
-        cv2.imwrite(original_path, frame)
-        print(f"Saved original image to: {original_path}")
+        while time.time() - start_time < self.detection_timeout:
+            if self.gate_controller.check_detection():
+                print("Vehicle detected by ultrasonic sensor!")
+                return True
+            time.sleep(0.1)
+        
+        print("Timeout waiting for vehicle detection")
+        return False
+
+    def capture_frame(self, video_source):
+        """Capture single frame from video source"""
+        cap = cv2.VideoCapture(video_source)
+        if not cap.isOpened():
+            print(f"Error opening video source: {video_source}")
+            return None
             
+        ret, frame = cap.read()
+        cap.release()
+        
+        if not ret:
+            print("Failed to capture frame")
+            return None
+            
+        return frame
+
+    def process_detection(self, video_source):
+        """Main processing workflow triggered by detection"""
+        # Step 1: Wait for ultrasonic detection
+        if not self.wait_for_detection():
+            return False
+            
+        # Step 2: Capture frame when detected
+        frame = self.capture_frame(video_source)
+        if frame is None:
+            return False
+            
+        # Step 3: Save original frame
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        original_path = os.path.join(self.dirs['original'], f"detected_{timestamp}.jpg")
+        cv2.imwrite(original_path, frame)
+        print(f"Saved detection image to: {original_path}")
+        
+        # Step 4: Process frame
         processed_frame, plate_text, authorized = self.process_frame(frame)
         
-        # Save processed frame
-        processed_path = os.path.join(self.dirs['processed'], f"processed_{os.path.basename(image_path)}")
+        # Step 5: Save processed frame
+        processed_path = os.path.join(self.dirs['processed'], f"processed_{timestamp}.jpg")
         cv2.imwrite(processed_path, processed_frame)
         print(f"Saved processed image to: {processed_path}")
         
-        # Save log
+        # Step 6: Log results
         log_entry = {
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'image_path': image_path,
+            'image_path': original_path,
             'plate_text': plate_text if plate_text else "None",
             'authorized': authorized,
             'gate_status': 'OPEN' if authorized else 'CLOSED'
@@ -294,43 +340,18 @@ class LicensePlateSystem:
         print(f"\nProcessing complete. Gate status: {'OPEN' if authorized else 'CLOSED'}")
         print(f"Detected plate: {plate_text if plate_text else 'None'}")
         
-        # Display results only if GUI is available
+        # Display results if GUI available
         if self.gui_enabled:
             try:
                 cv2.imshow("Original Image", frame)
                 cv2.imshow("Processed Image", processed_frame)
-                cv2.waitKey(0)
+                cv2.waitKey(3000)  # Show for 3 seconds
                 cv2.destroyAllWindows()
             except:
                 self.gui_enabled = False
                 print("Failed to display images - continuing in headless mode")
         
         return authorized
-
-    def process_video(self, video_source=0):
-        """Process video stream (file or camera)"""
-        cap = cv2.VideoCapture(video_source)
-        if not cap.isOpened():
-            print(f"Error opening video source: {video_source}")
-            return
-        
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Process frame
-            processed_frame, plate_text, authorized = self.process_frame(frame)
-            
-            # Display results
-            if self.gui_enabled:
-                cv2.imshow("License Plate Recognition", processed_frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-        
-        cap.release()
-        if self.gui_enabled:
-            cv2.destroyAllWindows()
 
 # ========== MAIN EXECUTION ==========
 if __name__ == '__main__':
@@ -341,15 +362,21 @@ if __name__ == '__main__':
     if system.gate_controller.serial_conn is None:
         print("Warning: Running without Arduino connection")
     
-    # Example usage options:
+    # IP camera URL or video source (0 for webcam)
+    VIDEO_SOURCE = "http://10.5.195.18:8080/video"  # Replace with your IP camera URL
     
-    # 1. Process single image
-    image_path = r"C:\Users\siyam\Pictures\thesis_file\images\download1.jpeg"
-    system.process_image(image_path)
-    
-    # 2. Process video file
-    # video_path = "path/to/your/video.mp4"
-    # system.process_video(video_path)
-    
-    # 3. Process live camera feed
-    # system.process_video(0)  # 0 for default camera
+    # Main loop
+    try:
+        while True:
+            # This will wait for detection, then process
+            system.process_detection(VIDEO_SOURCE)
+            
+            # Small delay before next detection cycle
+            time.sleep(1)
+            
+    except KeyboardInterrupt:
+        print("\nSystem stopped by user")
+    finally:
+        # Cleanup
+        if system.gate_controller.serial_conn:
+            system.gate_controller.close_gate()
