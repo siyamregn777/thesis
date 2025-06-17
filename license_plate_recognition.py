@@ -81,7 +81,8 @@ class LicensePlateSystem:
         torch.serialization.add_safe_globals([])
         
         # Initialize models
-        self.plate_model = YOLO(r"C:\Users\siyam\Documents\thesis-1\runs1\detect\train2\weights\best.pt")
+        self.object_model = YOLO("yolov8n.pt")  # General object detection
+        self.plate_model = YOLO(r"C:\Users\siyam\Documents\thesis-1\runs1\detect\train2\weights\best.pt")  # License plate detection
         self.reader = easyocr.Reader(['en'])
         
         # Initialize Arduino controller
@@ -89,10 +90,21 @@ class LicensePlateSystem:
         
         # Configuration
         self.vehicle_classes = [2, 3, 5, 7]  # COCO classes: car, motorcycle, bus, truck
+        self.non_vehicle_classes = {
+            0: 'person',
+            15: 'dog',
+            16: 'cat',
+            17: 'horse',
+            18: 'sheep',
+            19: 'cow'
+        }  # Classes to ignore for plate detection
         self.plate_confidence = 0.5
+        self.object_confidence = 0.5  # Confidence threshold for object detection
         self.api_url = "http://localhost:5000"  # Flask API endpoint
         self.output_root = "detection_results"  # Root folder for all outputs
         self.detection_timeout = 30  # Seconds to wait for detection
+        self.max_capture_attempts = 3  # Maximum number of capture attempts
+        self.capture_delay = 1  # Delay between capture attempts
         
         # Tesseract config
         pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
@@ -122,7 +134,8 @@ class LicensePlateSystem:
             'processed': os.path.join(self.output_root, "processed_frames"),
             'plates': os.path.join(self.output_root, "plate_crops"),
             'logs': os.path.join(self.output_root, "logs"),
-            'tesseract': os.path.join(self.output_root, "tesseract_results")
+            'tesseract': os.path.join(self.output_root, "tesseract_results"),
+            'objects': os.path.join(self.output_root, "object_detections")
         }
         
         for dir_path in self.dirs.values():
@@ -222,10 +235,30 @@ class LicensePlateSystem:
             return False
 
     def process_frame(self, frame):
-        """Process single frame and control gate with visualization"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        """Process single frame with object detection first"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         
-        # Step 1: License plate recognition
+        # Step 1: Object detection to identify what's in the frame
+        object_results = self.object_model(frame, conf=self.object_confidence, verbose=False)
+        
+        # Save object detection results
+        object_path = os.path.join(self.dirs['objects'], f"object_detection_{timestamp}.jpg")
+        annotated_frame = object_results[0].plot()
+        cv2.imwrite(object_path, annotated_frame)
+        print(f"Saved object detection results to: {object_path}")
+        
+        # Check for non-vehicle objects (people, animals, etc.)
+        for box, cls in zip(object_results[0].boxes.xyxy.cpu().numpy(), 
+                           object_results[0].boxes.cls.cpu().numpy()):
+            if cls in self.non_vehicle_classes:
+                object_name = self.non_vehicle_classes[cls]
+                cv2.putText(annotated_frame, f"{object_name.capitalize()} detected - No license plate", 
+                          (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
+                          0.9, (0, 0, 255), 2)
+                self.gate_controller.close_gate()
+                return annotated_frame, object_name, False
+        
+        # Step 2: If no non-vehicle objects, proceed with license plate recognition
         plate_results = self.plate_model(frame, conf=self.plate_confidence, verbose=False)
         authorized = False
         
@@ -253,8 +286,8 @@ class LicensePlateSystem:
                     # Add visualization
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(annotated_frame, f"{plate_text} - {status}", 
-                               (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 
-                               0.9, color, 2)
+                              (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 
+                              0.9, color, 2)
                     
                     # Control gate based on authorization
                     if authorized:
@@ -266,7 +299,7 @@ class LicensePlateSystem:
         
         # No plates detected but vehicle present
         self.gate_controller.close_gate()
-        return frame, "", False
+        return annotated_frame, "No license plate detected", False
 
     def wait_for_detection(self):
         """Wait for vehicle detection from ultrasonic sensor"""
@@ -304,52 +337,68 @@ class LicensePlateSystem:
         if not self.wait_for_detection():
             return False
             
-        # Step 2: Capture frame when detected
-        frame = self.capture_frame(video_source)
-        if frame is None:
-            return False
+        # Step 2: Attempt capture up to max_attempts times
+        authorized = False
+        attempt = 0
+        
+        while attempt < self.max_capture_attempts and not authorized:
+            attempt += 1
+            print(f"\nCapture attempt {attempt} of {self.max_capture_attempts}")
             
-        # Step 3: Save original frame
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        original_path = os.path.join(self.dirs['original'], f"detected_{timestamp}.jpg")
-        cv2.imwrite(original_path, frame)
-        print(f"Saved detection image to: {original_path}")
-        
-        # Step 4: Process frame
-        processed_frame, plate_text, authorized = self.process_frame(frame)
-        
-        # Step 5: Save processed frame
-        processed_path = os.path.join(self.dirs['processed'], f"processed_{timestamp}.jpg")
-        cv2.imwrite(processed_path, processed_frame)
-        print(f"Saved processed image to: {processed_path}")
-        
-        # Step 6: Log results
-        log_entry = {
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'image_path': original_path,
-            'plate_text': plate_text if plate_text else "None",
-            'authorized': authorized,
-            'gate_status': 'OPEN' if authorized else 'CLOSED'
-        }
-        
-        log_path = os.path.join(self.dirs['logs'], "detection_log.csv")
-        log_df = pd.DataFrame([log_entry])
-        log_df.to_csv(log_path, mode='a', header=not os.path.exists(log_path), index=False)
-        print(f"Logged results to: {log_path}")
-        
-        print(f"\nProcessing complete. Gate status: {'OPEN' if authorized else 'CLOSED'}")
-        print(f"Detected plate: {plate_text if plate_text else 'None'}")
-        
-        # Display results if GUI available
-        if self.gui_enabled:
-            try:
-                cv2.imshow("Original Image", frame)
-                cv2.imshow("Processed Image", processed_frame)
-                cv2.waitKey(3000)  # Show for 3 seconds
-                cv2.destroyAllWindows()
-            except:
-                self.gui_enabled = False
-                print("Failed to display images - continuing in headless mode")
+            # Step 3: Capture frame when detected
+            frame = self.capture_frame(video_source)
+            if frame is None:
+                time.sleep(self.capture_delay)
+                continue
+                
+            # Step 4: Save original frame
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            original_path = os.path.join(self.dirs['original'], f"attempt_{attempt}_{timestamp}.jpg")
+            cv2.imwrite(original_path, frame)
+            print(f"Saved detection image to: {original_path}")
+            
+            # Step 5: Process frame
+            processed_frame, detection_result, authorized = self.process_frame(frame)
+            
+            # Step 6: Save processed frame
+            processed_path = os.path.join(self.dirs['processed'], f"processed_{attempt}_{timestamp}.jpg")
+            cv2.imwrite(processed_path, processed_frame)
+            print(f"Saved processed image to: {processed_path}")
+            
+            # Step 7: Log results
+            log_entry = {
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'attempt': attempt,
+                'image_path': original_path,
+                'detected_object': detection_result,
+                'plate_text': detection_result if detection_result in self.non_vehicle_classes.values() or 
+                               detection_result == "No license plate detected" else "None",
+                'authorized': authorized,
+                'gate_status': 'OPEN' if authorized else 'CLOSED'
+            }
+            
+            log_path = os.path.join(self.dirs['logs'], "detection_log.csv")
+            log_df = pd.DataFrame([log_entry])
+            log_df.to_csv(log_path, mode='a', header=not os.path.exists(log_path), index=False)
+            print(f"Logged results to: {log_path}")
+            
+            print(f"\nProcessing complete. Gate status: {'OPEN' if authorized else 'CLOSED'}")
+            print(f"Detection result: {detection_result}")
+            
+            # Display results if GUI available
+            if self.gui_enabled:
+                try:
+                    cv2.imshow("Original Image", frame)
+                    cv2.imshow("Processed Image", processed_frame)
+                    cv2.waitKey(3000)  # Show for 3 seconds
+                    cv2.destroyAllWindows()
+                except:
+                    self.gui_enabled = False
+                    print("Failed to display images - continuing in headless mode")
+            
+            # Small delay between attempts
+            if not authorized and attempt < self.max_capture_attempts:
+                time.sleep(self.capture_delay)
         
         return authorized
 
@@ -363,12 +412,12 @@ if __name__ == '__main__':
         print("Warning: Running without Arduino connection")
     
     # IP camera URL or video source (0 for webcam)
-    VIDEO_SOURCE = "http://10.5.195.18:8080/video"  # Replace with your IP camera URL
+    VIDEO_SOURCE = "http://192.168.137.68:8080/video"  # Replace with your IP camera URL
     
     # Main loop
     try:
         while True:
-            # This will wait for detection, then process
+            # This will wait for detection, then process with max attempts
             system.process_detection(VIDEO_SOURCE)
             
             # Small delay before next detection cycle
