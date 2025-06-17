@@ -308,7 +308,7 @@ class LicensePlateSystem:
         
         while time.time() - start_time < self.detection_timeout:
             if self.gate_controller.check_detection():
-                print("Vehicle detected by ultrasonic sensor!")
+                print("Object detected by ultrasonic sensor!")
                 return True
             time.sleep(0.1)
         
@@ -412,7 +412,7 @@ if __name__ == '__main__':
         print("Warning: Running without Arduino connection")
     
     # IP camera URL or video source (0 for webcam)
-    VIDEO_SOURCE = "http://192.168.137.68:8080/video"  # Replace with your IP camera URL
+    VIDEO_SOURCE = "http://192.168.1.34:8080/video"  # Replace with your IP camera URL
     
     # Main loop
     try:

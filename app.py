@@ -218,6 +218,98 @@ def check_plate():
         "details": plate_doc.to_dict() if plate_doc.exists else None
     })
 
+@app.route('/update_driver', methods=['POST'])
+def update_driver():
+    if 'logged_in' not in session or not session.get('is_admin'):
+        return jsonify({"message": "Admin access required"}), 403
+
+    id_number = request.form.get('id_number')
+    new_password = request.form.get('password')
+
+    if not id_number or not new_password:
+        return jsonify({"message": "ID Number and new password required"}), 400
+
+    try:
+        user_doc = users_ref.document(id_number).get()
+        if not user_doc.exists:
+            return jsonify({"message": "User does not exist!"}), 404
+
+        users_ref.document(id_number).update({'password': new_password})
+        return jsonify({"message": "User password updated successfully!"}), 200
+    except Exception as e:
+        return jsonify({"message": f"Error: {str(e)}"}), 500
+
+@app.route('/update_plate', methods=['POST'])
+def update_plate():
+    if 'logged_in' not in session:
+        return jsonify({"message": "Login required"}), 401
+
+    old_plate = request.form.get('old_plate')
+    new_plate = request.form.get('new_plate')
+
+    if not old_plate or not new_plate:
+        return jsonify({"message": "Old and new plate numbers are required"}), 400
+
+    try:
+        old_doc = plates_ref.document(old_plate).get()
+        if not old_doc.exists:
+            return jsonify({"message": "Original plate not found"}), 404
+
+        plate_data = old_doc.to_dict()
+
+        if not session.get('is_admin') and plate_data['id_number'] != session.get('user_id'):
+            return jsonify({"message": "Unauthorized to update this plate"}), 403
+
+        if plates_ref.document(new_plate).get().exists:
+            return jsonify({"message": "New plate already exists!"}), 400
+
+        plates_ref.document(old_plate).delete()
+        plate_data['plate'] = new_plate
+        plate_data['updated_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        plates_ref.document(new_plate).set(plate_data)
+
+        return jsonify({"message": "Plate number updated successfully!"}), 200
+    except Exception as e:
+        return jsonify({"message": f"Error: {str(e)}"}), 500
+
+@app.route('/delete_plate', methods=['POST'])
+def delete_plate():
+    if 'logged_in' not in session:
+        return jsonify({"message": "Login required"}), 401
+
+    try:
+        # Get plate number from JSON or form data
+        if request.is_json:
+            data = request.get_json()
+            plate = data.get('plate')
+        else:
+            plate = request.form.get('plate')
+        
+        if not plate:
+            return jsonify({"message": "Plate number required"}), 400
+
+        plate_doc = plates_ref.document(plate).get()
+        if not plate_doc.exists:
+            return jsonify({"message": "License plate not found"}), 404
+
+        plate_data = plate_doc.to_dict()
+        owner_id = plate_data.get('id_number')
+
+        # Authorization check
+        if not session.get('is_admin') and session.get('user_id') != owner_id:
+            return jsonify({"message": "Unauthorized to delete this plate"}), 403
+
+        plates_ref.document(plate).delete()
+        return jsonify({
+            "success": True,
+            "message": "License plate deleted successfully!"
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error: {str(e)}"
+        }), 500
 @app.route('/register_plate', methods=['POST'])
 def register_plate():
     if 'logged_in' not in session:
@@ -268,6 +360,33 @@ def detect():
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+@app.route('/delete_driver', methods=['POST'])
+def delete_driver():
+    if 'logged_in' not in session or not session.get('is_admin'):
+        return jsonify({"message": "Admin access required"}), 403
+
+    driver_id = request.form.get('delete_driver_id')
+    if not driver_id:
+        return jsonify({"message": "Driver ID required"}), 400
+
+    try:
+        # Check if driver exists
+        if not drivers_ref.document(driver_id).get().exists:
+            return jsonify({"message": "Driver not found!"}), 404
+
+        # Delete driver and corresponding user (if exists)
+        drivers_ref.document(driver_id).delete()
+        users_ref.document(driver_id).delete()
+
+        # Optionally: delete plates associated with driver
+        plates = plates_ref.where('id_number', '==', driver_id).stream()
+        for plate_doc in plates:
+            plates_ref.document(plate_doc.id).delete()
+
+        return jsonify({"message": "Driver and associated data deleted successfully!"}), 200
+    except Exception as e:
+        return jsonify({"message": f"Error: {str(e)}"}), 500
 
 @app.route('/test_gate', methods=['POST'])
 def test_gate():
